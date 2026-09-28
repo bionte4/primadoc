@@ -29,6 +29,20 @@ enum WorkflowStepStatus {
   REJECTED
 }
 
+enum PolicyType {
+  POLICY
+  PROCEDURE
+  TECHNICAL_GUIDE
+}
+
+enum Department {
+  CORP
+  HR
+  IT
+  FIN
+  OPS
+}
+
 model User {
   id        String   @id @default(cuid())
   name      String
@@ -75,6 +89,14 @@ model Policy {
   versionGroupId String
   isCurrent      Boolean      @default(true)
   status         PolicyStatus @default(DRAFT)
+  type           PolicyType   @default(POLICY)
+  department     Department   @default(CORP)
+  /// Row id of the parent kebijakan or prosedur. Empty for a kebijakan.
+  parentId       String?
+  parent         Policy?      @relation("DocumentHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children       Policy[]     @relation("DocumentHierarchy")
+  /// Set when the parent document is archived and this child should be checked.
+  needsReview    Boolean      @default(false)
   reviewStartedAt DateTime?
   remindedAt      DateTime?
   escalatedAt     DateTime?
@@ -98,6 +120,9 @@ model Policy {
   @@index([versionGroupId])
   @@index([isCurrent])
   @@index([searchVector], type: Gin)
+  @@index([type])
+  @@index([department])
+  @@index([parentId])
   @@index([status, reviewStartedAt])
 }
 

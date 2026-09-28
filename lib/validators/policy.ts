@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { POLICY_CATEGORIES } from "@/lib/constants";
+import { POLICY_TYPES } from "@/lib/document-kind";
+import { DEPARTMENTS } from "@/lib/document-kind";
 
 export const policyFormSchema = z.object({
   title: z
@@ -10,13 +12,15 @@ export const policyFormSchema = z.object({
   documentNumber: z
     .string()
     .trim()
-    .min(3, "Nomor dokumen minimal 3 karakter")
     .max(50, "Nomor dokumen maksimal 50 karakter")
-    .regex(
-      /^[A-Za-z0-9][A-Za-z0-9._/-]*$/,
+    .refine(
+      (value) => value === "" || /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value),
       "Gunakan huruf, angka, titik, garis miring, atau tanda hubung",
     ),
   category: z.enum(POLICY_CATEGORIES, "Pilih kategori"),
+  department: z.enum(DEPARTMENTS, "Pilih departemen"),
+  type: z.enum(POLICY_TYPES, "Pilih jenis dokumen"),
+  parentId: z.string().trim().optional(),
   description: z
     .string()
     .trim()

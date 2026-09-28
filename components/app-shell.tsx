@@ -89,7 +89,7 @@ export function AppShell({
             Dashboard
           </NavItem>
           <NavItem href="/policies" active={policiesActive} icon={FileText}>
-            Daftar kebijakan
+            Dokumen
           </NavItem>
           {canAccessApprovalQueue(user.role) && (
             <NavItem href="/approval" active={approvalActive} icon={ClipboardCheck}>

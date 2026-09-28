@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { countPolicies, listPolicies } from "@/actions/policies";
+import { TaxonomyFilters } from "@/components/policies/policy-filters";
 import { StatusBadge } from "@/components/policies/status-badge";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { POLICY_STATUSES, STATUS_LABEL } from "@/lib/constants";
+import { DEPARTMENT_LABEL } from "@/lib/document-kind";
 import { formatDateTime } from "@/lib/format";
 import {
   canAccessApprovalQueue,
@@ -12,10 +14,18 @@ import {
 } from "@/lib/rbac";
 import type { PolicyStatus } from "@prisma/client";
 
-export async function PolicyDashboard({ user }: { user: SessionUser }) {
+export async function PolicyDashboard({
+  user,
+  department = "",
+  documentType = "",
+}: {
+  user: SessionUser;
+  department?: string;
+  documentType?: string;
+}) {
   const [policies, counts] = await Promise.all([
-    listPolicies(user, "", ""),
-    countPolicies(user),
+    listPolicies(user, "", "", documentType, department),
+    countPolicies(user, documentType, department),
   ]);
   const total = POLICY_STATUSES.reduce((sum, status) => sum + counts[status], 0);
   const focus = focusStatuses(user.role);
@@ -37,14 +47,16 @@ export async function PolicyDashboard({ user }: { user: SessionUser }) {
         )}
       </div>
 
+      <TaxonomyFilters department={department} documentType={documentType} />
+
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Semua" value={total} href="/policies" />
+        <Stat label="Semua" value={total} href={statHref("/policies", department, documentType)} />
         {POLICY_STATUSES.map((status) => (
           <Stat
             key={status}
             label={STATUS_LABEL[status]}
             value={counts[status]}
-            href={`/policies?status=${status}`}
+            href={statHref(`/policies?status=${status}`, department, documentType)}
           />
         ))}
       </div>
@@ -55,7 +67,7 @@ export async function PolicyDashboard({ user }: { user: SessionUser }) {
             <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               {focusTitle(user.role)}
             </h2>
-            <Link href={focusHref(user.role)} className="text-xs font-medium text-primary hover:underline">
+            <Link href={focusHref(user.role, department, documentType)} className="text-xs font-medium text-primary hover:underline">
               Lihat semua
             </Link>
           </header>
@@ -74,8 +86,11 @@ export async function PolicyDashboard({ user }: { user: SessionUser }) {
             <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               Diperbarui baru-baru ini
             </h2>
-            <Link href="/policies" className="text-xs font-medium text-primary hover:underline">
-              Daftar kebijakan
+            <Link
+              href={statHref("/policies", department, documentType)}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Daftar dokumen
             </Link>
           </header>
           <PolicyLinks policies={recent} emptyLabel="Belum ada kebijakan." />
@@ -103,10 +118,17 @@ function focusCopy(role: SessionUser["role"]) {
   return "Ringkasan siklus dokumen. Daftar lengkap ada di menu kebijakan.";
 }
 
-function focusHref(role: SessionUser["role"]) {
-  if (role === "STAFF") return "/policies?status=DRAFT";
+function focusHref(role: SessionUser["role"], department: string, documentType: string) {
+  if (role === "STAFF") return statHref("/policies?status=DRAFT", department, documentType);
   if (canAccessApprovalQueue(role)) return "/approval";
-  return "/policies?status=IN_REVIEW";
+  return statHref("/policies?status=IN_REVIEW", department, documentType);
+}
+
+function statHref(href: string, department: string, documentType: string) {
+  const url = new URL(href, "http://prismadoc.local");
+  if (department) url.searchParams.set("department", department);
+  if (documentType) url.searchParams.set("type", documentType);
+  return `${url.pathname}${url.search}`;
 }
 
 function Stat({ label, value, href }: { label: string; value: number; href: string }) {
@@ -129,6 +151,7 @@ function PolicyLinks({
     id: string;
     title: string;
     documentNumber: string;
+    department: keyof typeof DEPARTMENT_LABEL;
     status: PolicyStatus;
     updatedAt: Date;
   }[];
@@ -149,7 +172,7 @@ function PolicyLinks({
             <span className="min-w-0">
               <span className="block truncate text-[13px] font-medium">{policy.title}</span>
               <span className="block truncate text-[11px] text-muted-foreground">
-                {policy.documentNumber} · {formatDateTime(policy.updatedAt)}
+                {policy.documentNumber} · {DEPARTMENT_LABEL[policy.department]} · {formatDateTime(policy.updatedAt)}
               </span>
             </span>
             <StatusBadge status={policy.status} />

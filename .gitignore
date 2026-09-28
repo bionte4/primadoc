@@ -34,9 +34,6 @@ yarn-error.log*
 .env*
 !.env.example
 
-# uploaded policy files
-/uploads
-
 # vercel
 .vercel
 

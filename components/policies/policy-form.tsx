@@ -13,7 +13,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { POLICY_CATEGORIES } from "@/lib/constants";
+import { DEPARTMENT_LABEL, DEPARTMENTS, parentTypeFor, POLICY_TYPES, TIER_LABEL } from "@/lib/document-kind";
 import { formatVersion, nextMajorVersion, nextMinorVersion } from "@/lib/version";
+import type { Department, PolicyType } from "@prisma/client";
 import {
   policyFormSchema,
   type PolicyFormValues,
@@ -22,18 +24,31 @@ import {
 const fieldClass =
   "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
+export type ParentChoice = {
+  id: string;
+  title: string;
+  documentNumber: string;
+  type: PolicyType;
+  department: Department;
+  category: string;
+};
+
 export function PolicyForm({
   mode,
   policyId,
   defaultValues,
   currentFileName,
   currentVersion,
+  parents = [],
+  lockType = false,
 }: {
   mode: "create" | "edit";
   policyId?: string;
   defaultValues?: PolicyFormValues;
   currentFileName?: string | null;
   currentVersion?: string;
+  parents?: ParentChoice[];
+  lockType?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -51,23 +66,35 @@ export function PolicyForm({
       title: "",
       documentNumber: "",
       category: "Umum",
+      department: "CORP",
       description: "",
+      type: "POLICY",
+      parentId: "",
     },
   });
+  const documentType = form.watch("type");
+  const selectedParentId = form.watch("parentId");
+  const isChild = documentType !== "POLICY";
+  const neededParent = parentTypeFor(documentType);
+  const parentOptions = parents.filter((parent) => parent.type === neededParent);
 
   function onSubmit(values: PolicyFormValues) {
     const file = fileRef.current?.files?.[0];
     if (mode === "create" && (!file || file.size === 0)) {
-      setFileError("Lampirkan berkas kebijakan.");
+      setFileError("Lampirkan berkas dokumen.");
       return;
     }
     setFileError(null);
 
     const formData = new FormData();
     formData.set("title", values.title);
-    formData.set("documentNumber", values.documentNumber);
-    formData.set("category", values.category);
+    formData.set("documentNumber", form.getValues("documentNumber") ?? "");
+    formData.set("category", form.getValues("category"));
+    formData.set("department", form.getValues("department"));
     formData.set("description", values.description);
+    formData.set("type", form.getValues("type"));
+    const parentId = form.getValues("parentId");
+    if (parentId) formData.set("parentId", parentId);
     if (mode === "edit") formData.set("versionBump", versionBump);
     if (file && file.size > 0) formData.set("file", file);
     startTransition(() => {
@@ -83,19 +110,107 @@ export function PolicyForm({
           <Input id="title" className="h-9" {...form.register("title")} />
           <FieldError message={form.formState.errors.title?.message} />
         </div>
+        <div className="space-y-2 sm:col-span-2">
+          <Label htmlFor="type">Jenis dokumen</Label>
+          <select
+            id="type"
+            className={fieldClass}
+            disabled={lockType}
+            {...form.register("type", {
+              onChange: () => {
+                form.setValue("parentId", "");
+              },
+            })}
+          >
+            {POLICY_TYPES.map((item) => (
+              <option key={item} value={item}>
+                {TIER_LABEL[item]}
+              </option>
+            ))}
+          </select>
+          <FieldError message={form.formState.errors.type?.message} />
+        </div>
+        {isChild && (
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="parentId">Dokumen induk</Label>
+            <select
+              id="parentId"
+              className={fieldClass}
+              {...form.register("parentId", {
+                onChange: (event) => {
+                  const parent = parentOptions.find((item) => item.id === event.target.value);
+                  if (
+                    parent &&
+                    POLICY_CATEGORIES.includes(parent.category as (typeof POLICY_CATEGORIES)[number])
+                  ) {
+                    form.setValue("category", parent.category as PolicyFormValues["category"]);
+                  }
+                  if (parent) form.setValue("department", parent.department);
+                },
+              })}
+            >
+              <option value="">Pilih dokumen induk</option>
+              {parentOptions.map((parent) => (
+                <option key={parent.id} value={parent.id}>
+                  {parent.documentNumber} · {parent.title}
+                </option>
+              ))}
+              {selectedParentId &&
+                !parentOptions.some((parent) => parent.id === selectedParentId) && (
+                  <option value={selectedParentId}>Dokumen induk saat ini</option>
+                )}
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              {documentType === "PROCEDURE"
+                ? "Prosedur mengikuti kebijakan yang sudah disetujui."
+                : "Petunjuk teknis mengikuti prosedur yang sudah disetujui."}
+            </p>
+            <FieldError message={form.formState.errors.parentId?.message} />
+          </div>
+        )}
+        <div className="space-y-2">
+          <Label htmlFor="department">Departemen</Label>
+          <select
+            id="department"
+            className={fieldClass}
+            disabled={isChild}
+            {...form.register("department")}
+          >
+            {DEPARTMENTS.map((item) => (
+              <option key={item} value={item}>
+                {DEPARTMENT_LABEL[item]}
+              </option>
+            ))}
+          </select>
+          {isChild && (
+            <p className="text-[11px] text-muted-foreground">Departemen mengikuti dokumen induk.</p>
+          )}
+          <FieldError message={form.formState.errors.department?.message} />
+        </div>
         <div className="space-y-2">
           <Label htmlFor="documentNumber">Nomor dokumen</Label>
-          <Input
-            id="documentNumber"
-            className="h-9 uppercase"
-            placeholder="POL-SDM-001"
-            {...form.register("documentNumber")}
-          />
+          {mode === "create" ? (
+            <p id="documentNumber" className="flex h-9 items-center text-sm text-muted-foreground">
+              Diisi otomatis, misalnya IT/POL/001/2026
+            </p>
+          ) : (
+            <Input
+              id="documentNumber"
+              className="h-9"
+              readOnly
+              {...form.register("documentNumber")}
+            />
+          )}
           <FieldError message={form.formState.errors.documentNumber?.message} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="category">Kategori</Label>
-          <select id="category" className={fieldClass} {...form.register("category")}>
+          <select
+            id="category"
+            className={fieldClass}
+            disabled={isChild}
+            {...form.register("category")}
+          >
             {POLICY_CATEGORIES.map((category) => (
               <option key={category} value={category}>
                 {category}

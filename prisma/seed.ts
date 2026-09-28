@@ -59,6 +59,7 @@ async function main() {
       title: "Kebijakan Kerja Hibrida",
       documentNumber: "POL-SDM-001",
       category: "SDM",
+      department: "HR",
       description:
         "Mengatur hari kerja di kantor dan jarak jauh, termasuk jam inti dan persetujuan atasan.",
       version: "1.0",
@@ -75,6 +76,7 @@ async function main() {
       title: "Batas Pengeluaran Operasional",
       documentNumber: "POL-KEU-014",
       category: "Keuangan",
+      department: "FIN",
       description:
         "Menetapkan plafon pengeluaran tanpa persetujuan tambahan dan dokumen pendukung yang wajib dilampirkan.",
       version: "1.0",
@@ -91,6 +93,7 @@ async function main() {
       title: "Pengelolaan Akses Sistem Internal",
       documentNumber: "POL-TI-003",
       category: "TI",
+      department: "IT",
       description:
         "Mengatur pemberian, peninjauan, dan pencabutan akses ke sistem internal perusahaan.",
       version: "1.2",

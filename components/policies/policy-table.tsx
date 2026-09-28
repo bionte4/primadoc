@@ -1,6 +1,7 @@
 import Link from "next/link";
-import type { PolicyStatus } from "@prisma/client";
+import type { Department, PolicyStatus, PolicyType } from "@prisma/client";
 import { PolicyRowActions } from "@/components/policies/policy-actions";
+import { KindBadge } from "@/components/policies/kind-badge";
 import { StatusBadge } from "@/components/policies/status-badge";
 import {
   Table,
@@ -10,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DEPARTMENT_LABEL } from "@/lib/document-kind";
 import { formatDateTime } from "@/lib/format";
 import { canDecide, canDeletePolicy, canSubmitForReview, type SessionUser } from "@/lib/rbac";
 import { formatVersion } from "@/lib/version";
@@ -21,6 +23,9 @@ export type PolicyListItem = {
   category: string;
   version: string;
   status: PolicyStatus;
+  type: PolicyType;
+  department: Department;
+  needsReview: boolean;
   authorId: string;
   updatedAt: Date;
   author: { name: string };
@@ -56,6 +61,12 @@ export function PolicyTable({
               Versi
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              Departemen
+            </TableHead>
+            <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              Tier
+            </TableHead>
+            <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
               Status
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -72,7 +83,7 @@ export function PolicyTable({
         <TableBody>
           {policies.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="h-16 text-center text-sm text-muted-foreground">
+              <TableCell colSpan={10} className="h-16 text-center text-sm text-muted-foreground">
                 {emptyLabel}
               </TableCell>
             </TableRow>
@@ -107,7 +118,16 @@ export function PolicyTable({
                   {formatVersion(policy.version)}
                 </TableCell>
                 <TableCell className="px-2.5 py-1.5 whitespace-nowrap">
+                  {DEPARTMENT_LABEL[policy.department]}
+                </TableCell>
+                <TableCell className="px-2.5 py-1.5 whitespace-nowrap">
+                  <KindBadge type={policy.type} />
+                </TableCell>
+                <TableCell className="px-2.5 py-1.5 whitespace-nowrap">
                   <StatusBadge status={policy.status} />
+                  {policy.needsReview && (
+                    <p className="mt-0.5 text-[11px] text-amber-700">Perlu ditinjau</p>
+                  )}
                 </TableCell>
                 <TableCell className="px-2.5 py-1.5">{policy.author.name}</TableCell>
                 <TableCell className="px-2.5 py-1.5 text-xs whitespace-nowrap text-muted-foreground">

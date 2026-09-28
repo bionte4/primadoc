@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { getPolicyForUser } from "@/actions/policies";
+import { getPolicyForUser, listParentOptions } from "@/actions/policies";
 import { PolicyForm } from "@/components/policies/policy-form";
 import { POLICY_CATEGORIES } from "@/lib/constants";
+import { TYPE_LABEL } from "@/lib/document-kind";
 import { canEditPolicy } from "@/lib/rbac";
 import { requireUser } from "@/lib/session";
 import type { PolicyFormValues } from "@/lib/validators/policy";
@@ -20,9 +21,8 @@ export default async function EditPolicyPage({
     redirect(`/policies/${id}`);
   }
 
-  const category = POLICY_CATEGORIES.includes(
-    policy.category as (typeof POLICY_CATEGORIES)[number],
-  )
+  const parents = await listParentOptions(user);
+  const category = POLICY_CATEGORIES.includes(policy.category as (typeof POLICY_CATEGORIES)[number])
     ? (policy.category as PolicyFormValues["category"])
     : "Umum";
 
@@ -34,7 +34,7 @@ export default async function EditPolicyPage({
       >
         Kembali ke detail
       </Link>
-      <h1 className="mt-1 text-lg font-semibold tracking-tight">Ubah kebijakan</h1>
+      <h1 className="mt-1 text-lg font-semibold tracking-tight">Ubah {TYPE_LABEL[policy.type].toLowerCase()}</h1>
       <p className="mt-0.5 mb-3 text-xs text-muted-foreground">
         Menyimpan membuat versi baru. Versi sebelumnya tetap bisa dibuka.
       </p>
@@ -44,11 +44,16 @@ export default async function EditPolicyPage({
           policyId={policy.id}
           currentFileName={policy.fileName}
           currentVersion={policy.version}
+          parents={parents}
+          lockType
           defaultValues={{
             title: policy.title,
             documentNumber: policy.documentNumber,
             category,
+            department: policy.department,
             description: policy.description,
+            type: policy.type,
+            parentId: policy.parentId ?? "",
           }}
         />
       </div>

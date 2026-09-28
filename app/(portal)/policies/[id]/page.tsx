@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAttestationReport, getMyAttestation } from "@/actions/attestations";
-import { getPolicyForUser, listPolicyVersions } from "@/actions/policies";
+import { getPolicyForUser, listDocumentAncestors, listDocumentChildren, listPolicyVersions } from "@/actions/policies";
 import { AttestButton } from "@/components/policies/attest-button";
 import { DocumentViewer } from "@/components/policies/document-viewer";
+import { KindBadge } from "@/components/policies/kind-badge";
 import { PolicyActions } from "@/components/policies/policy-actions";
 import { StatusBadge } from "@/components/policies/status-badge";
 import {
@@ -16,16 +17,19 @@ import {
 } from "@/components/ui/table";
 import { AUDIT_LABEL, ROLE_LABEL, WORKFLOW_LABEL } from "@/lib/constants";
 import { formatDateTime } from "@/lib/format";
+import { childActionLabel, DEPARTMENT_LABEL, TIER_LABEL, TYPE_LABEL } from "@/lib/document-kind";
 import {
   canAddReviewNote,
   canArchive,
   canAttest,
+  canCreatePolicy,
   canDecide,
   canDeletePolicy,
   canEditPolicy,
   canManageUsers,
   canRevise,
   canSubmitForReview,
+  canViewPolicy,
 } from "@/lib/rbac";
 import { requireUser } from "@/lib/session";
 import { loadDocumentView } from "@/lib/document-view";
@@ -46,6 +50,11 @@ export default async function PolicyDetailPage({
   if (!policy) notFound();
   const versions = await listPolicyVersions(policy.versionGroupId);
   const currentVersion = versions.find((item) => item.isCurrent);
+  const [ancestors, children] = await Promise.all([
+    listDocumentAncestors(policy.parentId),
+    listDocumentChildren(user, policy.id),
+  ]);
+  const childLabel = childActionLabel(policy.type);
 
   const isAuthor = policy.authorId === user.id;
   const showAttest = canAttest(user.role);
@@ -72,6 +81,7 @@ export default async function PolicyDetailPage({
             Kembali ke dashboard
           </Link>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <KindBadge type={policy.type} />
             <StatusBadge status={policy.status} />
             <span className="font-mono text-xs text-muted-foreground">
               {policy.documentNumber}
@@ -79,6 +89,34 @@ export default async function PolicyDetailPage({
             <span className="text-xs text-muted-foreground">{formatVersion(policy.version)}</span>
           </div>
           <h1 className="mt-1 text-lg font-semibold tracking-tight">{policy.title}</h1>
+          {ancestors.length > 0 && (
+            <p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              {ancestors.map((item) => {
+                const visible = canViewPolicy(user.role, item.status, item.authorId === user.id);
+                const label = `${TYPE_LABEL[item.type]} ${item.documentNumber}`;
+                return (
+                  <span key={item.id} className="inline-flex items-center gap-1">
+                    {visible ? (
+                      <Link href={`/policies/${item.id}`} className="hover:text-foreground hover:underline">
+                        {label}
+                      </Link>
+                    ) : (
+                      <span>{label}</span>
+                    )}
+                    <span aria-hidden>→</span>
+                  </span>
+                );
+              })}
+              <span className="text-foreground">
+                {TYPE_LABEL[policy.type]} {policy.documentNumber}
+              </span>
+            </p>
+          )}
+          {policy.needsReview && (
+            <p className="mt-1 text-xs text-amber-800">
+              Induk dokumen ini sudah diarsipkan. Tinjau apakah turunan ini masih berlaku.
+            </p>
+          )}
           {policy.status === "IN_REVIEW" && policy.delegatedApprover && (
             <p className="mt-1 text-xs text-muted-foreground">
               Dilimpahkan ke {policy.delegatedApprover.name} karena approver utama tidak memutuskan dalam{" "}
@@ -152,11 +190,53 @@ export default async function PolicyDetailPage({
           <>
 
         <section className="grid gap-x-4 gap-y-2 rounded-lg bg-card px-3 py-2.5 ring-1 ring-foreground/10 sm:grid-cols-4">
+          <Meta label="Departemen" value={DEPARTMENT_LABEL[policy.department]} />
+          <Meta label="Tier" value={TIER_LABEL[policy.type]} />
           <Meta label="Kategori" value={policy.category} />
           <Meta label="Penulis" value={`${policy.author.name} · ${ROLE_LABEL[policy.author.role]}`} />
           <Meta label="Dibuat" value={formatDateTime(policy.createdAt)} />
           <Meta label="Diperbarui" value={formatDateTime(policy.updatedAt)} />
         </section>
+
+        {(children.length > 0 || childLabel) && (
+          <section className="rounded-lg bg-card p-3 ring-1 ring-foreground/10">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Dokumen turunan
+              </h2>
+              {childLabel &&
+                policy.isCurrent &&
+                policy.status === "APPROVED" &&
+                canCreatePolicy(user.role) && (
+                  <Link
+                    href={`/policies/new?parent=${policy.id}`}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    {childLabel}
+                  </Link>
+                )}
+            </div>
+            {children.length === 0 ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">Belum ada turunan.</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-border">
+                {children.map((child) => (
+                  <li key={child.id} className="flex flex-wrap items-center gap-2 py-1.5">
+                    <KindBadge type={child.type} />
+                    <Link href={`/policies/${child.id}`} className="text-sm hover:underline">
+                      <span className="font-mono text-xs">{child.documentNumber}</span> {child.title}
+                    </Link>
+                    <StatusBadge status={child.status} />
+                    <span className="text-xs text-muted-foreground">{formatVersion(child.version)}</span>
+                    {child.needsReview && (
+                      <span className="text-[11px] text-amber-700">Perlu ditinjau</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
 
         <section className="rounded-lg bg-card p-3 ring-1 ring-foreground/10">
           <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">

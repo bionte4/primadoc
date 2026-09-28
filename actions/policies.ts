@@ -21,6 +21,8 @@ import {
 import { requireUser } from "@/lib/session";
 import { savePolicyFile, isSafeStoredName, uploadsDirectory, type StoredFile } from "@/lib/upload";
 import { compareVersionsDesc, formatVersion, nextMajorVersion, nextMinorVersion } from "@/lib/version";
+import { childType, isDepartment, isPolicyType, parentTypeFor } from "@/lib/document-kind";
+import { documentYear, nextDocumentNumber } from "@/lib/document-number";
 import { findPrimaryApproverId } from "@/lib/review-escalation";
 import { searchPolicies, snippetParts } from "@/lib/policy-search";
 import { POLICY_STATUSES } from "@/lib/constants";
@@ -29,7 +31,7 @@ import {
   policyFormSchema,
   requiredNotesSchema,
 } from "@/lib/validators/policy";
-import type { PolicyStatus } from "@prisma/client";
+import type { Department, PolicyStatus, PolicyType } from "@prisma/client";
 
 export type ActionState = {
   error?: string;
@@ -54,15 +56,21 @@ export type PolicyDetail = Prisma.PolicyGetPayload<{
   include: typeof policyInclude;
 }>;
 
-export async function listPolicies(user: SessionUser, query: string, status: string) {
+export async function listPolicies(
+  user: SessionUser,
+  query: string,
+  status: string,
+  documentType = "",
+  department = "",
+) {
   const visibility: Prisma.PolicyWhereInput =
     user.role === "STAFF"
       ? { OR: [{ authorId: user.id }, { status: "APPROVED" }] }
       : {};
 
-  const statusFilter: Prisma.PolicyWhereInput = isPolicyStatus(status)
-    ? { status }
-    : {};
+  const statusFilter: Prisma.PolicyWhereInput = isPolicyStatus(status) ? { status } : {};
+  const typeFilter: Prisma.PolicyWhereInput = isPolicyType(documentType) ? { type: documentType } : {};
+  const departmentFilter: Prisma.PolicyWhereInput = isDepartment(department) ? { department } : {};
 
   const hits = query ? await searchPolicies(query) : null;
   if (hits && hits.length === 0) return [];
@@ -74,6 +82,8 @@ export async function listPolicies(user: SessionUser, query: string, status: str
         { isCurrent: true },
         visibility,
         statusFilter,
+        typeFilter,
+        departmentFilter,
         ...(hits ? [{ id: { in: hits.map((hit) => hit.id) } }] : []),
       ],
     },
@@ -95,15 +105,17 @@ export async function listPolicies(user: SessionUser, query: string, status: str
     }));
 }
 
-export async function countPolicies(user: SessionUser) {
+export async function countPolicies(user: SessionUser, documentType = "", department = "") {
   const visibility: Prisma.PolicyWhereInput =
     user.role === "STAFF"
       ? { OR: [{ authorId: user.id }, { status: "APPROVED" }] }
       : {};
+  const typeFilter: Prisma.PolicyWhereInput = isPolicyType(documentType) ? { type: documentType } : {};
+  const departmentFilter: Prisma.PolicyWhereInput = isDepartment(department) ? { department } : {};
 
   const grouped = await prisma.policy.groupBy({
     by: ["status"],
-    where: { AND: [{ isCurrent: true }, visibility] },
+    where: { AND: [{ isCurrent: true }, visibility, typeFilter, departmentFilter] },
     _count: { _all: true },
   });
 
@@ -142,9 +154,12 @@ export async function createPolicy(
 
   const parsed = policyFormSchema.safeParse({
     title: formData.get("title"),
-    documentNumber: formData.get("documentNumber"),
+    documentNumber: String(formData.get("documentNumber") ?? ""),
     category: formData.get("category"),
     description: formData.get("description"),
+    type: formData.get("type") || "POLICY",
+    department: formData.get("department") || "CORP",
+    parentId: String(formData.get("parentId") ?? "") || undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Data tidak valid." };
@@ -164,7 +179,28 @@ export async function createPolicy(
 
   try {
     const policy = await prisma.$transaction(async (tx) => {
-      const documentNumber = parsed.data.documentNumber.toUpperCase();
+      const documentType = parsed.data.type;
+      const requestedParentId = parsed.data.parentId?.trim() ?? "";
+      if (documentType !== "POLICY" && !requestedParentId) {
+        throw new Error("INDUK_WAJIB");
+      }
+      const parent = requestedParentId
+        ? await tx.policy.findUnique({ where: { id: requestedParentId } })
+        : null;
+      const expectedParent = parentTypeFor(documentType);
+      if (
+        expectedParent &&
+        (!parent?.isCurrent || parent.status !== "APPROVED" || parent.type !== expectedParent)
+      ) {
+        throw new Error("INDUK_TIDAK_SIAP");
+      }
+      if (!expectedParent && parent) {
+        throw new Error("INDUK_TIDAK_SIAP");
+      }
+
+      const category = parent ? parent.category : parsed.data.category;
+      const department = parent ? parent.department : parsed.data.department;
+      const documentNumber = await allocateDocumentNumber(tx, department, documentType);
       const taken = await tx.policy.findFirst({
         where: { documentNumber, isCurrent: true },
         select: { id: true },
@@ -177,13 +213,16 @@ export async function createPolicy(
         data: {
           title: parsed.data.title,
           documentNumber,
-          category: parsed.data.category,
+          category,
           description: parsed.data.description,
           fileUrl: stored.storedName,
           fileName: stored.originalName,
           contentText: stored.contentText || null,
           version: "1.0",
           versionGroupId: "pending",
+          type: documentType,
+          department,
+          parentId: parent?.id ?? null,
           status: "DRAFT",
           authorId: user.id,
         },
@@ -209,10 +248,16 @@ export async function createPolicy(
     redirect(`/policies/${policy.id}`);
   } catch (error) {
     if (isRedirectError(error)) throw error;
+    if (error instanceof Error && error.message === "INDUK_WAJIB") {
+      return { error: "Pilih dokumen induk." };
+    }
+    if (error instanceof Error && error.message === "INDUK_TIDAK_SIAP") {
+      return { error: "Induk harus berupa dokumen terbaru yang sudah disetujui." };
+    }
     if (isTakenNumber(error) || isUniqueViolation(error)) {
       return { error: "Nomor dokumen sudah digunakan." };
     }
-    return { error: "Gagal menyimpan kebijakan." };
+    return { error: "Gagal menyimpan dokumen." };
   }
 }
 
@@ -234,9 +279,12 @@ export async function updatePolicy(
 
   const parsed = policyFormSchema.safeParse({
     title: formData.get("title"),
-    documentNumber: formData.get("documentNumber"),
+    documentNumber: String(formData.get("documentNumber") ?? ""),
     category: formData.get("category"),
     description: formData.get("description"),
+    type: existing.type,
+    department: formData.get("department") || existing.department,
+    parentId: String(formData.get("parentId") ?? "") || undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Data tidak valid." };
@@ -257,10 +305,32 @@ export async function updatePolicy(
   const bump = formData.get("versionBump") === "major" ? "major" : "minor";
   const version =
     bump === "major" ? nextMajorVersion(existing.version) : nextMinorVersion(existing.version);
-  const documentNumber = parsed.data.documentNumber.toUpperCase();
+  const documentNumber = existing.documentNumber;
+  const requestedParentId = parsed.data.parentId?.trim() ?? "";
 
   try {
     const created = await prisma.$transaction(async (tx) => {
+      let parentId = existing.type === "POLICY" ? null : existing.parentId;
+      let category = existing.type === "POLICY" ? parsed.data.category : existing.category;
+      let department = existing.type === "POLICY" ? parsed.data.department : existing.department;
+      if (existing.type !== "POLICY") {
+        const parent = requestedParentId
+          ? await tx.policy.findUnique({ where: { id: requestedParentId } })
+          : null;
+        const expectedParent = parentTypeFor(existing.type);
+        if (
+          !parent?.isCurrent ||
+          parent.status !== "APPROVED" ||
+          parent.type !== expectedParent ||
+          parent.id === existing.id
+        ) {
+          throw new Error("INDUK_TIDAK_SIAP");
+        }
+        parentId = parent.id;
+        category = parent.category;
+        department = parent.department;
+      }
+
       const taken = await tx.policy.findFirst({
         where: {
           documentNumber,
@@ -280,18 +350,23 @@ export async function updatePolicy(
         data: {
           title: parsed.data.title,
           documentNumber,
-          category: parsed.data.category,
+          category,
           description: parsed.data.description,
           fileUrl: stored?.storedName ?? existing.fileUrl,
           fileName: stored?.originalName ?? existing.fileName,
           contentText: stored ? stored.contentText || null : existing.contentText,
           version,
           versionGroupId: existing.versionGroupId,
+          type: existing.type,
+          department,
+          parentId,
+          needsReview: false,
           isCurrent: true,
           status: "DRAFT",
           authorId: existing.authorId,
         },
       });
+      await retargetChildren(tx, existing.id, next.id);
 
       await tx.auditLog.create({
         data: {
@@ -312,6 +387,9 @@ export async function updatePolicy(
     redirect(`/policies/${created.id}`);
   } catch (error) {
     if (isRedirectError(error)) throw error;
+    if (error instanceof Error && error.message === "INDUK_TIDAK_SIAP") {
+      return { error: "Induk harus berupa dokumen terbaru yang sudah disetujui." };
+    }
     if (isTakenNumber(error) || isUniqueViolation(error)) {
       return { error: "Nomor dokumen sudah digunakan." };
     }
@@ -446,11 +524,16 @@ export async function revisePolicy(policyId: string): Promise<ActionState> {
         contentText: policy.contentText,
         version,
         versionGroupId: policy.versionGroupId,
+        type: policy.type,
+        department: policy.department,
+        parentId: policy.parentId,
+        needsReview: false,
         isCurrent: true,
         status: "DRAFT",
         authorId: policy.authorId,
       },
     });
+    await retargetChildren(tx, policy.id, next.id);
     await tx.auditLog.create({
       data: {
         userId: user.id,
@@ -480,7 +563,8 @@ export async function deletePolicy(policyId: string): Promise<ActionState> {
     return { error: "Hanya draf atau dokumen yang ditolak yang dapat dihapus." };
   }
 
-  await prisma.$transaction(async (tx) => {
+  try {
+    await prisma.$transaction(async (tx) => {
     const previous = await tx.policy.findFirst({
       where: { versionGroupId: policy.versionGroupId, id: { not: policy.id } },
       orderBy: { updatedAt: "desc" },
@@ -492,6 +576,12 @@ export async function deletePolicy(policyId: string): Promise<ActionState> {
         details: `Menghapus ${policy.documentNumber} ${formatVersion(policy.version)} (${policy.title}).`,
       },
     });
+    if (previous) {
+      await retargetChildren(tx, policy.id, previous.id);
+    } else {
+      const children = await tx.policy.count({ where: { parentId: policy.id } });
+      if (children > 0) throw new Error("PUNYA_TURUNAN");
+    }
     await tx.policy.delete({ where: { id: policy.id } });
     if (previous) {
       await tx.policy.update({
@@ -500,6 +590,15 @@ export async function deletePolicy(policyId: string): Promise<ActionState> {
       });
     }
   });
+  } catch (error) {
+    if (error instanceof Error && error.message === "PUNYA_TURUNAN") {
+      return { error: "Dokumen ini masih punya turunan. Hapus atau pindahkan turunannya dulu." };
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+      return { error: "Dokumen ini masih punya turunan. Hapus atau pindahkan turunannya dulu." };
+    }
+    throw error;
+  }
 
   if (policy.fileUrl && isSafeStoredName(policy.fileUrl)) {
     const stillUsed = await prisma.policy.count({ where: { fileUrl: policy.fileUrl } });
@@ -577,9 +676,33 @@ async function transitionPolicy(input: {
   }
 
   const enteringReview = input.to === "IN_REVIEW";
+  if (enteringReview && policy.parentId) {
+    const allowed = await parentAllowsSubmission(policy.parentId);
+    if (!allowed) {
+      return { error: "Induk harus sudah disetujui sebelum dokumen ini diajukan." };
+    }
+  }
+
   const primaryApproverId = enteringReview ? await findPrimaryApproverId() : null;
 
   await prisma.$transaction(async (tx) => {
+    let flaggedChildren = 0;
+    if (input.to === "ARCHIVED") {
+      const family = await tx.policy.findMany({
+        where: { versionGroupId: policy.versionGroupId },
+        select: { id: true },
+      });
+      const flagged = await tx.policy.updateMany({
+        where: {
+          parentId: { in: family.map((row) => row.id) },
+          isCurrent: true,
+          status: { not: "ARCHIVED" },
+        },
+        data: { needsReview: true },
+      });
+      flaggedChildren = flagged.count;
+    }
+
     await tx.policy.update({
       where: { id: policy.id },
       data: {
@@ -614,7 +737,11 @@ async function transitionPolicy(input: {
         userId: user.id,
         policyId: policy.id,
         action: input.action,
-        details: [input.detail(policy.documentNumber), input.notes]
+        details: [
+          input.detail(policy.documentNumber),
+          flaggedChildren > 0 ? `${flaggedChildren} turunan ditandai perlu ditinjau.` : null,
+          input.notes,
+        ]
           .filter(Boolean)
           .join(" "),
       },
@@ -662,6 +789,156 @@ function isUniqueViolation(error: unknown) {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"
   );
+}
+
+async function allocateDocumentNumber(
+  tx: Prisma.TransactionClient,
+  department: Department,
+  documentType: PolicyType,
+) {
+  const year = documentYear();
+  const prefix = department;
+  const typeCode = documentType === "POLICY" ? "POL" : documentType === "PROCEDURE" ? "PRO" : "JUK";
+  const stem = `${prefix}/${typeCode}/`;
+  const existing = await tx.policy.findMany({
+    where: { documentNumber: { startsWith: stem, endsWith: `/${year}` } },
+    select: { documentNumber: true },
+  });
+  return nextDocumentNumber(
+    department,
+    documentType,
+    existing.map((row) => row.documentNumber),
+    year,
+  );
+}
+
+async function retargetChildren(tx: Prisma.TransactionClient, fromId: string, toId: string) {
+  await tx.policy.updateMany({
+    where: { parentId: fromId, isCurrent: true },
+    data: { parentId: toId },
+  });
+}
+
+async function parentAllowsSubmission(parentId: string) {
+  const linked = await prisma.policy.findUnique({
+    where: { id: parentId },
+    select: { id: true, status: true, isCurrent: true, versionGroupId: true },
+  });
+  if (!linked) return false;
+  const current = linked.isCurrent
+    ? linked
+    : await prisma.policy.findFirst({
+        where: { versionGroupId: linked.versionGroupId, isCurrent: true },
+        select: { id: true, status: true, isCurrent: true, versionGroupId: true },
+      });
+  if (!current || current.status === "ARCHIVED") return false;
+  if (current.status === "APPROVED") return true;
+  const approved = await prisma.policy.findFirst({
+    where: {
+      versionGroupId: current.versionGroupId,
+      status: "APPROVED",
+      NOT: { id: current.id },
+    },
+    select: { id: true },
+  });
+  return Boolean(approved);
+}
+
+export async function listParentOptions(user: SessionUser) {
+  const visibility: Prisma.PolicyWhereInput =
+    user.role === "STAFF"
+      ? { OR: [{ authorId: user.id }, { status: "APPROVED" }] }
+      : {};
+  return prisma.policy.findMany({
+    where: {
+      AND: [
+        { isCurrent: true, status: "APPROVED", type: { in: ["POLICY", "PROCEDURE"] } },
+        visibility,
+      ],
+    },
+    orderBy: { documentNumber: "asc" },
+    select: {
+      id: true,
+      title: true,
+      documentNumber: true,
+      type: true,
+      department: true,
+      category: true,
+    },
+  });
+}
+
+export async function childDraftFor(user: SessionUser, parentId: string) {
+  const parent = await getPolicyForUser(user, parentId);
+  if (!parent?.isCurrent || parent.status !== "APPROVED") return null;
+  const type = childType(parent.type);
+  if (!type) return null;
+  return {
+    parentId: parent.id,
+    parentTitle: parent.title,
+    parentNumber: parent.documentNumber,
+    parentType: parent.type,
+    type,
+    department: parent.department,
+    category: parent.category,
+  };
+}
+
+export async function listDocumentChildren(user: SessionUser, parentId: string) {
+  const visibility: Prisma.PolicyWhereInput =
+    user.role === "STAFF"
+      ? { OR: [{ authorId: user.id }, { status: "APPROVED" }] }
+      : {};
+  return prisma.policy.findMany({
+    where: { AND: [{ parentId, isCurrent: true }, visibility] },
+    orderBy: { documentNumber: "asc" },
+    select: {
+      id: true,
+      title: true,
+      documentNumber: true,
+      type: true,
+      status: true,
+      version: true,
+      needsReview: true,
+    },
+  });
+}
+
+export async function listDocumentAncestors(parentId: string | null) {
+  const chain: {
+    id: string;
+    title: string;
+    documentNumber: string;
+    type: PolicyType;
+    status: PolicyStatus;
+    authorId: string;
+  }[] = [];
+  let currentId = parentId;
+  for (let depth = 0; currentId && depth < 3; depth += 1) {
+    const parent = await prisma.policy.findUnique({
+      where: { id: currentId },
+      select: {
+        id: true,
+        title: true,
+        documentNumber: true,
+        type: true,
+        status: true,
+        authorId: true,
+        parentId: true,
+      },
+    });
+    if (!parent) break;
+    chain.unshift({
+      id: parent.id,
+      title: parent.title,
+      documentNumber: parent.documentNumber,
+      type: parent.type,
+      status: parent.status,
+      authorId: parent.authorId,
+    });
+    currentId = parent.parentId;
+  }
+  return chain;
 }
 
 function isRedirectError(error: unknown) {

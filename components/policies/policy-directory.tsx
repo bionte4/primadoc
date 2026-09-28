@@ -12,6 +12,8 @@ export async function PolicyDirectory({
   user,
   query,
   status,
+  documentType,
+  department,
   basePath,
   title,
   description,
@@ -19,13 +21,15 @@ export async function PolicyDirectory({
   user: SessionUser;
   query: string;
   status: string;
+  documentType: string;
+  department: string;
   basePath: "/policies";
   title: string;
   description: string;
 }) {
   const [policies, counts] = await Promise.all([
-    listPolicies(user, query, status),
-    countPolicies(user),
+    listPolicies(user, query, status, documentType, department),
+    countPolicies(user, documentType, department),
   ]);
   const total = POLICY_STATUSES.reduce((sum, item) => sum + counts[item], 0);
 
@@ -45,27 +49,36 @@ export async function PolicyDirectory({
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        <CountChip label="Semua" value={total} href={basePath} active={!status} />
+        <CountChip label="Semua" value={total} href={chipHref(basePath, "", documentType, department)} active={!status} />
         {POLICY_STATUSES.map((item) => (
           <CountChip
             key={item}
             label={STATUS_LABEL[item]}
             value={counts[item]}
-            href={`${basePath}?status=${item}`}
+            href={chipHref(basePath, item, documentType, department)}
             active={status === item}
           />
         ))}
       </div>
 
-      <PolicyFilters query={query} status={status} />
+      <PolicyFilters query={query} status={status} documentType={documentType} department={department} />
 
       <PolicyTable
         policies={policies}
         user={user}
-        emptyLabel="Tidak ada kebijakan yang cocok dengan filter ini."
+        emptyLabel="Tidak ada dokumen yang cocok dengan filter ini."
       />
     </div>
   );
+}
+
+function chipHref(basePath: string, status: string, documentType: string, department: string) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (documentType) params.set("type", documentType);
+  if (department) params.set("department", department);
+  const search = params.toString();
+  return search ? `${basePath}?${search}` : basePath;
 }
 
 function CountChip({
