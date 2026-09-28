@@ -19,7 +19,7 @@ export async function PolicyDirectory({
   user: SessionUser;
   query: string;
   status: string;
-  basePath: "/dashboard" | "/policies";
+  basePath: "/policies";
   title: string;
   description: string;
 }) {

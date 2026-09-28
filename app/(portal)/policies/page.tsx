@@ -18,11 +18,7 @@ export default async function PoliciesPage({
       status={status}
       basePath="/policies"
       title="Kebijakan"
-      description={
-        user.role === "STAFF"
-          ? "Draf Anda dan kebijakan yang sudah disetujui."
-          : "Seluruh dokumen beserta status siklus hidupnya."
-      }
+      description="Cari, saring, dan kelola seluruh dokumen."
     />
   );
 }

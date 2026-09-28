@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
+import { extractDocumentText } from "@/lib/document-text";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 
@@ -20,6 +21,7 @@ const MAX_BYTES = 10 * 1024 * 1024;
 export type StoredFile = {
   storedName: string;
   originalName: string;
+  contentText: string;
 };
 
 export function uploadsDirectory() {
@@ -50,10 +52,12 @@ export async function savePolicyFile(file: File): Promise<StoredFile> {
   await mkdir(UPLOAD_DIR, { recursive: true });
   const storedName = `${randomUUID()}${extension}`;
   await writeFile(path.join(UPLOAD_DIR, storedName), buffer);
+  const contentText = await extractDocumentText(buffer, extension);
 
   return {
     storedName,
     originalName: sanitizeOriginalName(file.name),
+    contentText,
   };
 }
 

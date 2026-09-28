@@ -24,6 +24,9 @@ export type PolicyListItem = {
   authorId: string;
   updatedAt: Date;
   author: { name: string };
+  primaryApproverId: string | null;
+  delegatedApproverId: string | null;
+  snippet: { text: string; match: boolean }[] | null;
 };
 
 export function PolicyTable({
@@ -85,6 +88,19 @@ export function PolicyTable({
                   <Link href={`/policies/${policy.id}`} className="line-clamp-2 leading-5 hover:underline">
                     {policy.title}
                   </Link>
+                  {policy.snippet && (
+                    <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted-foreground">
+                      {policy.snippet.map((part, index) =>
+                        part.match ? (
+                          <mark key={index} className="bg-amber-200/80 text-foreground">
+                            {part.text}
+                          </mark>
+                        ) : (
+                          <span key={index}>{part.text}</span>
+                        ),
+                      )}
+                    </p>
+                  )}
                 </TableCell>
                 <TableCell className="px-2.5 py-1.5 text-muted-foreground">{policy.category}</TableCell>
                 <TableCell className="px-2.5 py-1.5 whitespace-nowrap">
@@ -105,7 +121,7 @@ export function PolicyTable({
                       policy.status,
                       policy.authorId === user.id,
                     )}
-                    canDecide={canDecide(user.role, policy.status)}
+                    canDecide={canDecide(user.role, policy.status, user.id, policy)}
                     canDelete={canDeletePolicy(
                       user.role,
                       policy.status,

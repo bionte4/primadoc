@@ -54,6 +54,8 @@ function isProtected(pathname: string) {
   return (
     pathname === "/dashboard" ||
     pathname.startsWith("/policies") ||
+    pathname === "/notifications" ||
+    pathname.startsWith("/notifications/") ||
     pathname === "/approval" ||
     pathname.startsWith("/approval/") ||
     pathname === "/users" ||

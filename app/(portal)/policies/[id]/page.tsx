@@ -1,9 +1,9 @@
-import { Download } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAttestationReport, getMyAttestation } from "@/actions/attestations";
 import { getPolicyForUser, listPolicyVersions } from "@/actions/policies";
 import { AttestButton } from "@/components/policies/attest-button";
+import { DocumentViewer } from "@/components/policies/document-viewer";
 import { PolicyActions } from "@/components/policies/policy-actions";
 import { StatusBadge } from "@/components/policies/status-badge";
 import {
@@ -28,7 +28,8 @@ import {
   canSubmitForReview,
 } from "@/lib/rbac";
 import { requireUser } from "@/lib/session";
-import { canPreview } from "@/lib/upload";
+import { loadDocumentView } from "@/lib/document-view";
+import { reviewSlaDays } from "@/lib/review-sla";
 import { formatVersion } from "@/lib/version";
 
 export default async function PolicyDetailPage({
@@ -47,17 +48,17 @@ export default async function PolicyDetailPage({
   const currentVersion = versions.find((item) => item.isCurrent);
 
   const isAuthor = policy.authorId === user.id;
-  const previewable = policy.fileUrl ? canPreview(policy.fileUrl) : false;
   const showAttest = canAttest(user.role);
-  const [mine, report] = await Promise.all([
+  const [mine, report, documentView] = await Promise.all([
     showAttest ? getMyAttestation(user.id, policy.id) : Promise.resolve(null),
     canManageUsers(user.role) ? getAttestationReport(policy.id) : Promise.resolve(null),
+    policy.fileUrl ? loadDocumentView(policy.fileUrl) : Promise.resolve(null),
   ]);
   const hasWorkflowAction =
     policy.isCurrent &&
     (canEditPolicy(user.role, policy.status, isAuthor) ||
       canSubmitForReview(user.role, policy.status, isAuthor) ||
-      canDecide(user.role, policy.status) ||
+      canDecide(user.role, policy.status, user.id, policy) ||
       canAddReviewNote(user.role, policy.status) ||
       canArchive(user.role, policy.status, isAuthor) ||
       canRevise(user.role, policy.status, isAuthor) ||
@@ -78,6 +79,17 @@ export default async function PolicyDetailPage({
             <span className="text-xs text-muted-foreground">{formatVersion(policy.version)}</span>
           </div>
           <h1 className="mt-1 text-lg font-semibold tracking-tight">{policy.title}</h1>
+          {policy.status === "IN_REVIEW" && policy.delegatedApprover && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Dilimpahkan ke {policy.delegatedApprover.name} karena approver utama tidak memutuskan dalam{" "}
+              {reviewSlaDays()} hari.
+            </p>
+          )}
+          {policy.status === "IN_REVIEW" && policy.primaryApprover && !policy.delegatedApprover && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Approver utama: {policy.primaryApprover.name}. Batas keputusan {reviewSlaDays()} hari.
+            </p>
+          )}
           {!policy.isCurrent && currentVersion && (
             <p className="mt-1 text-xs text-muted-foreground">
               Ini versi lama.{" "}
@@ -153,44 +165,21 @@ export default async function PolicyDetailPage({
           <p className="mt-1.5 text-sm leading-5 whitespace-pre-wrap">{policy.description}</p>
         </section>
 
-        <section className="rounded-lg bg-card p-3 ring-1 ring-foreground/10">
-          <div className="flex items-center justify-between gap-3">
+        {policy.fileUrl && documentView ? (
+          <DocumentViewer
+            fileUrl={policy.fileUrl}
+            fileName={policy.fileName}
+            view={documentView}
+            viewer={user}
+          />
+        ) : (
+          <section className="rounded-lg bg-card p-3 ring-1 ring-foreground/10">
             <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Berkas
+              Baca dokumen
             </h2>
-            {policy.fileUrl && (
-              <a
-                href={`/api/files/${policy.fileUrl}`}
-                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-              >
-                <Download className="size-3.5" />
-                Unduh
-              </a>
-            )}
-          </div>
-          {policy.fileUrl ? (
-            <div className="mt-2 space-y-2">
-              <p className="text-xs text-muted-foreground">{policy.fileName}</p>
-              {previewable && policy.fileUrl.endsWith(".pdf") && (
-                <iframe
-                  title="Pratinjau dokumen"
-                  src={`/api/files/${policy.fileUrl}?inline=1`}
-                  className="h-72 w-full rounded-md border bg-white"
-                />
-              )}
-              {previewable && !policy.fileUrl.endsWith(".pdf") && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={`/api/files/${policy.fileUrl}?inline=1`}
-                  alt={policy.fileName ?? "Pratinjau berkas"}
-                  className="max-h-72 rounded-md border object-contain"
-                />
-              )}
-            </div>
-          ) : (
             <p className="mt-1.5 text-xs text-muted-foreground">Belum ada berkas terlampir.</p>
-          )}
-        </section>
+          </section>
+        )}
 
         {report && (
           <section className="rounded-lg bg-card p-3 ring-1 ring-foreground/10">
@@ -301,7 +290,7 @@ export default async function PolicyDetailPage({
           policyId={policy.id}
           canEdit={policy.isCurrent && canEditPolicy(user.role, policy.status, isAuthor)}
           canSubmit={policy.isCurrent && canSubmitForReview(user.role, policy.status, isAuthor)}
-          canDecide={policy.isCurrent && canDecide(user.role, policy.status)}
+          canDecide={policy.isCurrent && canDecide(user.role, policy.status, user.id, policy)}
           canReview={policy.isCurrent && canAddReviewNote(user.role, policy.status)}
           canArchive={policy.isCurrent && canArchive(user.role, policy.status, isAuthor)}
           canRevise={policy.isCurrent && canRevise(user.role, policy.status, isAuthor)}

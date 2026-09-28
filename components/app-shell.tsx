@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardCheck, FileText, LayoutDashboard, ScrollText, Users, type LucideIcon } from "lucide-react";
+import { Bell, ClipboardCheck, FileText, LayoutDashboard, ScrollText, Users, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogoutButton } from "@/components/logout-button";
@@ -56,9 +56,11 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export function AppShell({
   user,
+  unreadReminders = 0,
   children,
 }: {
   user: SessionUser;
+  unreadReminders?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -120,6 +122,18 @@ export function AppShell({
         <header className="flex h-11 items-center justify-between border-b bg-card px-4 md:px-5">
           <p className="text-xs text-muted-foreground">Manajemen kebijakan</p>
           <div className="flex items-center gap-2">
+            <Link
+              href="/notifications"
+              className="relative inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs hover:bg-muted"
+            >
+              <Bell className="size-3.5" />
+              Pengingat
+              {unreadReminders > 0 && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                  {unreadReminders}
+                </span>
+              )}
+            </Link>
             <span className="hidden text-xs sm:inline">
               {user.name}
               <span className="text-muted-foreground"> · {ROLE_LABEL[user.role]}</span>

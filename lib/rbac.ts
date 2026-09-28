@@ -46,8 +46,16 @@ export function canAddReviewNote(role: Role, status: PolicyStatus) {
   return status === "IN_REVIEW" && (role === "REVIEWER" || role === "ADMIN");
 }
 
-export function canDecide(role: Role, status: PolicyStatus) {
-  return status === "IN_REVIEW" && role === "APPROVER";
+export function canDecide(
+  role: Role,
+  status: PolicyStatus,
+  userId: string,
+  policy: { primaryApproverId?: string | null; delegatedApproverId?: string | null } = {},
+) {
+  if (status !== "IN_REVIEW" || role !== "APPROVER") return false;
+  if (policy.delegatedApproverId) return userId === policy.delegatedApproverId;
+  if (policy.primaryApproverId) return userId === policy.primaryApproverId;
+  return true;
 }
 
 export function canArchive(

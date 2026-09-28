@@ -41,6 +41,8 @@ export const AUDIT_LABEL: Record<string, string> = {
   ARCHIVE: "Diarsipkan",
   REVISE: "Revisi dibuka",
   REVIEW_NOTE: "Catatan review",
+  ESCALATE: "Dilimpahkan",
+  REMIND: "Pengingat",
   DELETE: "Dihapus",
 };
 

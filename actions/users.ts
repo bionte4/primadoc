@@ -48,3 +48,40 @@ export async function inviteUser(_prev: InviteState, formData: FormData): Promis
   revalidatePath("/users");
   return { ok: true };
 }
+
+export async function setBackupApprover(formData: FormData) {
+  const user = await requireUser();
+  if (!canManageUsers(user.role)) {
+    return;
+  }
+
+  const userId = String(formData.get("userId") ?? "");
+  const backupApproverId = String(formData.get("backupApproverId") ?? "");
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true },
+  });
+  if (!target || target.role !== "APPROVER") return;
+
+  if (!backupApproverId) {
+    await prisma.user.update({
+      where: { id: target.id },
+      data: { backupApproverId: null },
+    });
+    revalidatePath("/users");
+    return;
+  }
+
+  if (backupApproverId === target.id) return;
+  const backup = await prisma.user.findUnique({
+    where: { id: backupApproverId },
+    select: { id: true, role: true },
+  });
+  if (!backup || backup.role !== "APPROVER") return;
+
+  await prisma.user.update({
+    where: { id: target.id },
+    data: { backupApproverId: backup.id },
+  });
+  revalidatePath("/users");
+}

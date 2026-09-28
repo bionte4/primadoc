@@ -19,8 +19,10 @@ import {
   type SessionUser,
 } from "@/lib/rbac";
 import { requireUser } from "@/lib/session";
-import { savePolicyFile, isSafeStoredName, uploadsDirectory } from "@/lib/upload";
+import { savePolicyFile, isSafeStoredName, uploadsDirectory, type StoredFile } from "@/lib/upload";
 import { compareVersionsDesc, formatVersion, nextMajorVersion, nextMinorVersion } from "@/lib/version";
+import { findPrimaryApproverId } from "@/lib/review-escalation";
+import { searchPolicies, snippetParts } from "@/lib/policy-search";
 import { POLICY_STATUSES } from "@/lib/constants";
 import {
   notesSchema,
@@ -40,6 +42,8 @@ const policyInclude = {
     include: { approver: { select: { id: true, name: true, role: true } } },
     orderBy: { stepOrder: "asc" as const },
   },
+  primaryApprover: { select: { id: true, name: true } },
+  delegatedApprover: { select: { id: true, name: true } },
   auditLogs: {
     include: { user: { select: { id: true, name: true, role: true } } },
     orderBy: { timestamp: "desc" as const },
@@ -56,25 +60,39 @@ export async function listPolicies(user: SessionUser, query: string, status: str
       ? { OR: [{ authorId: user.id }, { status: "APPROVED" }] }
       : {};
 
-  const search: Prisma.PolicyWhereInput = query
-    ? {
-        OR: [
-          { title: { contains: query, mode: "insensitive" } },
-          { documentNumber: { contains: query, mode: "insensitive" } },
-          { category: { contains: query, mode: "insensitive" } },
-        ],
-      }
-    : {};
-
   const statusFilter: Prisma.PolicyWhereInput = isPolicyStatus(status)
     ? { status }
     : {};
 
-  return prisma.policy.findMany({
-    where: { AND: [{ isCurrent: true }, visibility, search, statusFilter] },
+  const hits = query ? await searchPolicies(query) : null;
+  if (hits && hits.length === 0) return [];
+  const rank = new Map(hits?.map((hit, index) => [hit.id, index]));
+
+  const policies = await prisma.policy.findMany({
+    where: {
+      AND: [
+        { isCurrent: true },
+        visibility,
+        statusFilter,
+        ...(hits ? [{ id: { in: hits.map((hit) => hit.id) } }] : []),
+      ],
+    },
+    omit: { contentText: true },
     include: { author: { select: { name: true } } },
     orderBy: { updatedAt: "desc" },
   });
+
+  if (!hits) {
+    return policies.map((policy) => ({ ...policy, snippet: null }));
+  }
+
+  return policies
+    .slice()
+    .sort((left, right) => (rank.get(left.id) ?? 0) - (rank.get(right.id) ?? 0))
+    .map((policy) => ({
+      ...policy,
+      snippet: snippetParts(hits.find((hit) => hit.id === policy.id)?.snippet ?? ""),
+    }));
 }
 
 export async function countPolicies(user: SessionUser) {
@@ -137,7 +155,7 @@ export async function createPolicy(
     return { error: "Lampirkan berkas kebijakan." };
   }
 
-  let stored: { storedName: string; originalName: string };
+  let stored: StoredFile;
   try {
     stored = await savePolicyFile(file);
   } catch (error) {
@@ -163,6 +181,7 @@ export async function createPolicy(
           description: parsed.data.description,
           fileUrl: stored.storedName,
           fileName: stored.originalName,
+          contentText: stored.contentText || null,
           version: "1.0",
           versionGroupId: "pending",
           status: "DRAFT",
@@ -224,7 +243,7 @@ export async function updatePolicy(
   }
 
   const file = formData.get("file");
-  let stored: { storedName: string; originalName: string } | null = null;
+  let stored: StoredFile | null = null;
   if (file instanceof File && file.size > 0) {
     try {
       stored = await savePolicyFile(file);
@@ -265,6 +284,7 @@ export async function updatePolicy(
           description: parsed.data.description,
           fileUrl: stored?.storedName ?? existing.fileUrl,
           fileName: stored?.originalName ?? existing.fileName,
+          contentText: stored ? stored.contentText || null : existing.contentText,
           version,
           versionGroupId: existing.versionGroupId,
           isCurrent: true,
@@ -344,7 +364,8 @@ export async function approvePolicy(
     step: "APPROVED",
     action: "APPROVE",
     notes: parsed.data.notes,
-    authorize: (user, policy) => canDecide(user.role, policy.status),
+    authorize: (user, policy) =>
+      canDecide(user.role, policy.status, user.id, policy),
     detail: (documentNumber) => `Menyetujui ${documentNumber}.`,
   });
 }
@@ -367,7 +388,8 @@ export async function rejectPolicy(
     step: "REJECTED",
     action: "REJECT",
     notes: parsed.data.notes,
-    authorize: (user, policy) => canDecide(user.role, policy.status),
+    authorize: (user, policy) =>
+      canDecide(user.role, policy.status, user.id, policy),
     detail: (documentNumber) =>
       `Menolak ${documentNumber}. Dokumen kembali menjadi draf.`,
   });
@@ -421,6 +443,7 @@ export async function revisePolicy(policyId: string): Promise<ActionState> {
         description: policy.description,
         fileUrl: policy.fileUrl,
         fileName: policy.fileName,
+        contentText: policy.contentText,
         version,
         versionGroupId: policy.versionGroupId,
         isCurrent: true,
@@ -530,7 +553,13 @@ async function transitionPolicy(input: {
   notes?: string;
   authorize: (
     user: SessionUser,
-    policy: { status: PolicyStatus; authorId: string; documentNumber: string },
+    policy: {
+      status: PolicyStatus;
+      authorId: string;
+      documentNumber: string;
+      primaryApproverId: string | null;
+      delegatedApproverId: string | null;
+    },
   ) => boolean;
   detail: (documentNumber: string) => string;
 }): Promise<ActionState> {
@@ -547,10 +576,20 @@ async function transitionPolicy(input: {
     return { error: "Anda tidak memiliki akses untuk aksi ini." };
   }
 
+  const enteringReview = input.to === "IN_REVIEW";
+  const primaryApproverId = enteringReview ? await findPrimaryApproverId() : null;
+
   await prisma.$transaction(async (tx) => {
     await tx.policy.update({
       where: { id: policy.id },
-      data: { status: input.to },
+      data: {
+        status: input.to,
+        reviewStartedAt: enteringReview ? new Date() : null,
+        remindedAt: null,
+        escalatedAt: null,
+        delegatedApproverId: null,
+        primaryApproverId,
+      },
     });
 
     if (input.step) {

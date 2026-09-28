@@ -41,13 +41,20 @@ model User {
   /// Subject from that IdP (`sub`, or the Entra object id).
   externalId   String?
   role      Role     @default(STAFF)
+  /// Approver who receives this person's queue after the review deadline.
+  backupApproverId String?
+  backupApprover   User?    @relation("ApproverBackup", fields: [backupApproverId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  policies          Policy[]
+  policies          Policy[]           @relation("PolicyAuthor")
+  primaryReviews    Policy[]           @relation("PrimaryApprover")
+  delegatedReviews  Policy[]           @relation("DelegatedApprover")
+  coveringFor       User[]             @relation("ApproverBackup")
   workflowApprovals WorkflowApproval[]
   auditLogs         AuditLog[]
   attestations      Attestation[]
+  notifications     Notification[]
 
   @@unique([authProvider, externalId])
 }
@@ -60,24 +67,38 @@ model Policy {
   description    String       @db.Text
   fileUrl        String?
   fileName       String?
+  /// Plain text extracted from the PDF or Word file, used by full-text search.
+  contentText    String?      @db.Text
+  /// Filled by a database trigger. Includes title, number, category, description, and file text.
+  searchVector   Unsupported("tsvector")?
   version        String       @default("1.0")
   versionGroupId String
   isCurrent      Boolean      @default(true)
   status         PolicyStatus @default(DRAFT)
+  reviewStartedAt DateTime?
+  remindedAt      DateTime?
+  escalatedAt     DateTime?
+  primaryApproverId   String?
+  primaryApprover     User?        @relation("PrimaryApprover", fields: [primaryApproverId], references: [id], onDelete: SetNull)
+  delegatedApproverId String?
+  delegatedApprover   User?        @relation("DelegatedApprover", fields: [delegatedApproverId], references: [id], onDelete: SetNull)
   authorId       String
-  author         User         @relation(fields: [authorId], references: [id])
+  author         User         @relation("PolicyAuthor", fields: [authorId], references: [id])
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   approvals    WorkflowApproval[]
   auditLogs    AuditLog[]
   attestations Attestation[]
+  notifications Notification[]
 
   @@unique([documentNumber, version])
   @@index([status])
   @@index([authorId])
   @@index([versionGroupId])
   @@index([isCurrent])
+  @@index([searchVector], type: Gin)
+  @@index([status, reviewStartedAt])
 }
 
 model WorkflowApproval {
@@ -104,6 +125,20 @@ model Attestation {
 
   @@unique([userId, policyId])
   @@index([policyId])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policyId  String?
+  policy    Policy?   @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  title     String
+  body      String    @db.Text
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
 }
 
 model AuditLog {

@@ -39,7 +39,7 @@ export function PolicyFilters({
         <Input
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="Cari judul, nomor, atau kategori"
+          placeholder="Cari judul atau isi dokumen"
           className="h-8 pl-8 text-[13px]"
           aria-label="Cari kebijakan"
         />
