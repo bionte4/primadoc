@@ -1,0 +1,20 @@
+# Project Rules & Context: PRISMADOC
+
+## Tech Stack
+- **Framework**: Next.js (App Router, Server Actions)
+- **Styling & UI**: Tailwind CSS, Shadcn UI, Lucide React (Icons)
+- **ORM & Database**: Prisma ORM with PostgreSQL
+- **Authentication**: NextAuth.js
+- **File Storage**: MinIO / S3-compatible storage (or local uploads folder for MVP)
+
+## Architecture & Code Standards
+- Use TypeScript for all components and logic. Follow strict type-checking.
+- Implement modular architecture: split code into `components/`, `actions/` (Server Actions), `lib/`, and `types/`.
+- Ensure proper error handling and form validation using Zod and React Hook Form.
+- Write clean, maintainable code with clear documentation comments for complex business logic.
+
+## Core Domain Requirements (Policy Management)
+- **Document Lifecycle**: Policies must support stages: `DRAFT`, `IN_REVIEW`, `APPROVED`, `REJECTED`, `ARCHIVED`.
+- **Workflow & Approval**: Submission and decisions log `WorkflowApproval` with status `PENDING`, `APPROVED`, or `REJECTED`, plus an `AuditLog` entry.
+- **Role-Based Access Control (RBAC)**: Handle distinct roles: `STAFF`, `REVIEWER`, `APPROVER`, `ADMIN`.
+- **Versioning**: Track policy version numbers (e.g., v1.0, v1.1) when updates occur.

@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STAFF
+  REVIEWER
+  APPROVER
+  ADMIN
+}
+
+enum PolicyStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+/// Decision recorded on an approval step.
+enum WorkflowStepStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String?
+  /// Object id from Microsoft Entra ID. Empty until that user signs in with Microsoft.
+  entraId   String?  @unique
+  /// Last workplace IdP: azure-ad, google, or oidc (Active Directory via OpenID Connect).
+  authProvider String?
+  /// Subject from that IdP (`sub`, or the Entra object id).
+  externalId   String?
+  role      Role     @default(STAFF)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  policies          Policy[]
+  workflowApprovals WorkflowApproval[]
+  auditLogs         AuditLog[]
+  attestations      Attestation[]
+
+  @@unique([authProvider, externalId])
+}
+
+model Policy {
+  id             String       @id @default(cuid())
+  title          String
+  documentNumber String
+  category       String
+  description    String       @db.Text
+  fileUrl        String?
+  fileName       String?
+  version        String       @default("1.0")
+  versionGroupId String
+  isCurrent      Boolean      @default(true)
+  status         PolicyStatus @default(DRAFT)
+  authorId       String
+  author         User         @relation(fields: [authorId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  approvals    WorkflowApproval[]
+  auditLogs    AuditLog[]
+  attestations Attestation[]
+
+  @@unique([documentNumber, version])
+  @@index([status])
+  @@index([authorId])
+  @@index([versionGroupId])
+  @@index([isCurrent])
+}
+
+model WorkflowApproval {
+  id         String             @id @default(cuid())
+  policyId   String
+  policy     Policy             @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  approverId String
+  approver   User               @relation(fields: [approverId], references: [id])
+  status     WorkflowStepStatus
+  notes      String?            @db.Text
+  stepOrder  Int
+  createdAt  DateTime           @default(now())
+
+  @@index([policyId])
+}
+
+model Attestation {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policyId String
+  policy   Policy   @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  readAt   DateTime @default(now())
+
+  @@unique([userId, policyId])
+  @@index([policyId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  policyId  String?
+  policy    Policy?  @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  action    String
+  details   String?  @db.Text
+  timestamp DateTime @default(now())
+
+  @@index([policyId])
+  @@index([userId])
+}
