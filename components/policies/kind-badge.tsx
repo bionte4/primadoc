@@ -1,5 +1,7 @@
+"use client";
+
 import type { PolicyType } from "@prisma/client";
-import { TIER_LABEL } from "@/lib/document-kind";
+import { useI18n } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 
 const TYPE_CLASS: Record<PolicyType, string> = {
@@ -9,6 +11,7 @@ const TYPE_CLASS: Record<PolicyType, string> = {
 };
 
 export function KindBadge({ type }: { type: PolicyType }) {
+  const { t } = useI18n();
   return (
     <span
       className={cn(
@@ -16,7 +19,7 @@ export function KindBadge({ type }: { type: PolicyType }) {
         TYPE_CLASS[type],
       )}
     >
-      {TIER_LABEL[type]}
+      {t.tier[type]}
     </span>
   );
 }

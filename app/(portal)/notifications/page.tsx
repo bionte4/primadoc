@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { getDictionary } from "@/lib/i18n";
 import { requireUser } from "@/lib/session";
 
 export default async function NotificationsPage() {
   const user = await requireUser();
+  const { locale, t } = await getDictionary();
   const notifications = await prisma.notification.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
@@ -22,14 +24,12 @@ export default async function NotificationsPage() {
   return (
     <div className="flex w-full flex-col gap-3">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">Pengingat</h1>
-        <p className="text-xs text-muted-foreground">
-          Batas waktu review dan pelimpahan persetujuan.
-        </p>
+        <h1 className="text-lg font-semibold tracking-tight">{t.reminders.title}</h1>
+        <p className="text-xs text-muted-foreground">{t.reminders.lead}</p>
       </div>
       <div className="overflow-hidden rounded-lg bg-card ring-1 ring-foreground/10">
         {notifications.length === 0 ? (
-          <p className="px-3 py-6 text-sm text-muted-foreground">Belum ada pengingat.</p>
+          <p className="px-3 py-6 text-sm text-muted-foreground">{t.reminders.empty}</p>
         ) : (
           <ul>
             {notifications.map((item) => (
@@ -37,7 +37,7 @@ export default async function NotificationsPage() {
                 <p className="text-[13px] font-medium">{item.title}</p>
                 <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">{item.body}</p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  {formatDateTime(item.createdAt)}
+                  {formatDateTime(item.createdAt, locale)}
                   {item.policy && (
                     <>
                       {" · "}

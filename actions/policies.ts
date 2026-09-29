@@ -24,12 +24,14 @@ import { compareVersionsDesc, formatVersion, nextMajorVersion, nextMinorVersion 
 import { childType, isDepartment, isPolicyType, parentTypeFor } from "@/lib/document-kind";
 import { documentYear, nextDocumentNumber } from "@/lib/document-number";
 import { findPrimaryApproverId } from "@/lib/review-escalation";
+import { parseExpiryDate } from "@/lib/expiry";
 import { searchPolicies, snippetParts } from "@/lib/policy-search";
 import { POLICY_STATUSES } from "@/lib/constants";
+import { getDictionary, thrownFileError } from "@/lib/i18n";
 import {
-  notesSchema,
-  policyFormSchema,
-  requiredNotesSchema,
+  createNotesSchema,
+  createPolicyFormSchema,
+  createRequiredNotesSchema,
 } from "@/lib/validators/policy";
 import type { Department, PolicyStatus, PolicyType } from "@prisma/client";
 
@@ -37,6 +39,10 @@ export type ActionState = {
   error?: string;
   ok?: boolean;
 };
+
+async function text() {
+  return (await getDictionary()).t;
+}
 
 const policyInclude = {
   author: { select: { id: true, name: true, email: true, role: true } },
@@ -62,11 +68,13 @@ export async function listPolicies(
   status: string,
   documentType = "",
   department = "",
+  scope = "",
 ) {
   const visibility: Prisma.PolicyWhereInput =
     user.role === "STAFF"
       ? { OR: [{ authorId: user.id }, { status: "APPROVED" }] }
       : {};
+  const mineFilter: Prisma.PolicyWhereInput = scope === "mine" ? { authorId: user.id } : {};
 
   const statusFilter: Prisma.PolicyWhereInput = isPolicyStatus(status) ? { status } : {};
   const typeFilter: Prisma.PolicyWhereInput = isPolicyType(documentType) ? { type: documentType } : {};
@@ -81,6 +89,7 @@ export async function listPolicies(
       AND: [
         { isCurrent: true },
         visibility,
+        mineFilter,
         statusFilter,
         typeFilter,
         departmentFilter,
@@ -105,17 +114,23 @@ export async function listPolicies(
     }));
 }
 
-export async function countPolicies(user: SessionUser, documentType = "", department = "") {
+export async function countPolicies(
+  user: SessionUser,
+  documentType = "",
+  department = "",
+  scope = "",
+) {
   const visibility: Prisma.PolicyWhereInput =
     user.role === "STAFF"
       ? { OR: [{ authorId: user.id }, { status: "APPROVED" }] }
       : {};
+  const mineFilter: Prisma.PolicyWhereInput = scope === "mine" ? { authorId: user.id } : {};
   const typeFilter: Prisma.PolicyWhereInput = isPolicyType(documentType) ? { type: documentType } : {};
   const departmentFilter: Prisma.PolicyWhereInput = isDepartment(department) ? { department } : {};
 
   const grouped = await prisma.policy.groupBy({
     by: ["status"],
-    where: { AND: [{ isCurrent: true }, visibility, typeFilter, departmentFilter] },
+    where: { AND: [{ isCurrent: true }, visibility, mineFilter, typeFilter, departmentFilter] },
     _count: { _all: true },
   });
 
@@ -128,6 +143,27 @@ export async function countPolicies(user: SessionUser, documentType = "", depart
   }
 
   return counts;
+}
+
+/** In-review queue. `mine` keeps only the current user's assignments or review notes. */
+export async function listApprovalQueue(user: SessionUser, mine: boolean) {
+  const policies = await listPolicies(user, "", "IN_REVIEW");
+  if (!mine) return policies;
+
+  if (user.role === "APPROVER") {
+    return policies.filter((policy) => {
+      if (policy.delegatedApproverId) return policy.delegatedApproverId === user.id;
+      if (policy.primaryApproverId) return policy.primaryApproverId === user.id;
+      return false;
+    });
+  }
+
+  const notes = await prisma.workflowApproval.findMany({
+    where: { approverId: user.id, policy: { isCurrent: true, status: "IN_REVIEW" } },
+    select: { policyId: true },
+  });
+  const ids = new Set(notes.map((note) => note.policyId));
+  return policies.filter((policy) => ids.has(policy.id));
 }
 
 export async function getPolicyForUser(user: SessionUser, id: string) {
@@ -149,10 +185,11 @@ export async function createPolicy(
 ): Promise<ActionState> {
   const user = await requireUser();
   if (!canCreatePolicy(user.role)) {
-    return { error: "Anda tidak memiliki akses untuk membuat kebijakan." };
+    return { error: (await text()).errors.noCreateAccess };
   }
 
-  const parsed = policyFormSchema.safeParse({
+  const t = await text();
+  const parsed = createPolicyFormSchema(t.validation).safeParse({
     title: formData.get("title"),
     documentNumber: String(formData.get("documentNumber") ?? ""),
     category: formData.get("category"),
@@ -160,21 +197,24 @@ export async function createPolicy(
     type: formData.get("type") || "POLICY",
     department: formData.get("department") || "CORP",
     parentId: String(formData.get("parentId") ?? "") || undefined,
+    expiresAt: String(formData.get("expiresAt") ?? ""),
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Data tidak valid." };
+    return { error: parsed.error.issues[0]?.message ?? (await text()).errors.invalidData };
   }
+  const expiresAt = expiryFromForm(parsed.data.expiresAt);
+  if (expiresAt === "invalid") return { error: (await text()).errors.invalidExpiry };
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
-    return { error: "Lampirkan berkas kebijakan." };
+    return { error: (await text()).errors.fileRequired };
   }
 
   let stored: StoredFile;
   try {
     stored = await savePolicyFile(file);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Gagal mengunggah berkas." };
+    return { error: error instanceof Error ? thrownFileError(error.message, await text()) : (await text()).errors.uploadFailed };
   }
 
   try {
@@ -224,6 +264,7 @@ export async function createPolicy(
           department,
           parentId: parent?.id ?? null,
           status: "DRAFT",
+          expiresAt,
           authorId: user.id,
         },
       });
@@ -249,15 +290,15 @@ export async function createPolicy(
   } catch (error) {
     if (isRedirectError(error)) throw error;
     if (error instanceof Error && error.message === "INDUK_WAJIB") {
-      return { error: "Pilih dokumen induk." };
+      return { error: (await text()).errors.parentRequired };
     }
     if (error instanceof Error && error.message === "INDUK_TIDAK_SIAP") {
-      return { error: "Induk harus berupa dokumen terbaru yang sudah disetujui." };
+      return { error: (await text()).errors.parentMustBeApproved };
     }
     if (isTakenNumber(error) || isUniqueViolation(error)) {
-      return { error: "Nomor dokumen sudah digunakan." };
+      return { error: (await text()).errors.numberTaken };
     }
-    return { error: "Gagal menyimpan dokumen." };
+    return { error: (await text()).errors.saveFailed };
   }
 }
 
@@ -268,16 +309,17 @@ export async function updatePolicy(
 ): Promise<ActionState> {
   const user = await requireUser();
   const existing = await prisma.policy.findUnique({ where: { id: policyId } });
-  if (!existing) return { error: "Kebijakan tidak ditemukan." };
+  if (!existing) return { error: (await text()).errors.policyNotFound };
 
   if (!existing.isCurrent) {
-    return { error: "Hanya versi terbaru yang dapat diubah." };
+    return { error: (await text()).errors.onlyCurrentEditable };
   }
   if (!canEditPolicy(user.role, existing.status, existing.authorId === user.id)) {
-    return { error: "Kebijakan ini tidak dapat diubah pada status saat ini." };
+    return { error: (await text()).errors.cannotEditStatus };
   }
 
-  const parsed = policyFormSchema.safeParse({
+  const t = await text();
+  const parsed = createPolicyFormSchema(t.validation).safeParse({
     title: formData.get("title"),
     documentNumber: String(formData.get("documentNumber") ?? ""),
     category: formData.get("category"),
@@ -285,10 +327,13 @@ export async function updatePolicy(
     type: existing.type,
     department: formData.get("department") || existing.department,
     parentId: String(formData.get("parentId") ?? "") || undefined,
+    expiresAt: String(formData.get("expiresAt") ?? ""),
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Data tidak valid." };
+    return { error: parsed.error.issues[0]?.message ?? (await text()).errors.invalidData };
   }
+  const expiresAt = expiryFromForm(parsed.data.expiresAt);
+  if (expiresAt === "invalid") return { error: (await text()).errors.invalidExpiry };
 
   const file = formData.get("file");
   let stored: StoredFile | null = null;
@@ -297,7 +342,7 @@ export async function updatePolicy(
       stored = await savePolicyFile(file);
     } catch (error) {
       return {
-        error: error instanceof Error ? error.message : "Gagal mengunggah berkas.",
+        error: error instanceof Error ? thrownFileError(error.message, await text()) : (await text()).errors.uploadFailed,
       };
     }
   }
@@ -363,6 +408,7 @@ export async function updatePolicy(
           needsReview: false,
           isCurrent: true,
           status: "DRAFT",
+          expiresAt,
           authorId: existing.authorId,
         },
       });
@@ -388,12 +434,12 @@ export async function updatePolicy(
   } catch (error) {
     if (isRedirectError(error)) throw error;
     if (error instanceof Error && error.message === "INDUK_TIDAK_SIAP") {
-      return { error: "Induk harus berupa dokumen terbaru yang sudah disetujui." };
+      return { error: (await text()).errors.parentMustBeApproved };
     }
     if (isTakenNumber(error) || isUniqueViolation(error)) {
-      return { error: "Nomor dokumen sudah digunakan." };
+      return { error: (await text()).errors.numberTaken };
     }
-    return { error: "Gagal memperbarui kebijakan." };
+    return { error: (await text()).errors.updateFailed };
   }
 }
 
@@ -403,9 +449,10 @@ export async function submitForReview(
   formData: FormData,
 ): Promise<ActionState> {
   const notes = String(formData.get("notes") ?? "");
-  const parsed = notesSchema.safeParse({ notes });
+  const t = await text();
+  const parsed = createNotesSchema(t.validation).safeParse({ notes });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Catatan tidak valid." };
+    return { error: parsed.error.issues[0]?.message ?? (await text()).errors.invalidNotes };
   }
 
   const result = await transitionPolicy({
@@ -430,9 +477,10 @@ export async function approvePolicy(
   formData: FormData,
 ): Promise<ActionState> {
   const notes = String(formData.get("notes") ?? "");
-  const parsed = notesSchema.safeParse({ notes });
+  const t = await text();
+  const parsed = createNotesSchema(t.validation).safeParse({ notes });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Catatan tidak valid." };
+    return { error: parsed.error.issues[0]?.message ?? (await text()).errors.invalidNotes };
   }
 
   return transitionPolicy({
@@ -454,9 +502,10 @@ export async function rejectPolicy(
   formData: FormData,
 ): Promise<ActionState> {
   const notes = String(formData.get("notes") ?? "");
-  const parsed = requiredNotesSchema.safeParse({ notes });
+  const t = await text();
+  const parsed = createRequiredNotesSchema(t.validation).safeParse({ notes });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Alasan penolakan wajib diisi." };
+    return { error: parsed.error.issues[0]?.message ?? (await text()).errors.rejectReasonRequired };
   }
 
   return transitionPolicy({
@@ -479,9 +528,10 @@ export async function archivePolicy(
   formData: FormData,
 ): Promise<ActionState> {
   const notes = String(formData.get("notes") ?? "");
-  const parsed = notesSchema.safeParse({ notes });
+  const t = await text();
+  const parsed = createNotesSchema(t.validation).safeParse({ notes });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Catatan tidak valid." };
+    return { error: parsed.error.issues[0]?.message ?? (await text()).errors.invalidNotes };
   }
 
   return transitionPolicy({
@@ -499,12 +549,12 @@ export async function archivePolicy(
 export async function revisePolicy(policyId: string): Promise<ActionState> {
   const user = await requireUser();
   const policy = await prisma.policy.findUnique({ where: { id: policyId } });
-  if (!policy) return { error: "Kebijakan tidak ditemukan." };
+  if (!policy) return { error: (await text()).errors.policyNotFound };
   if (!policy.isCurrent) {
-    return { error: "Revisi hanya dapat dibuat dari versi terbaru." };
+    return { error: (await text()).errors.reviseOnlyCurrent };
   }
   if (!canRevise(user.role, policy.status, policy.authorId === user.id)) {
-    return { error: "Revisi hanya dapat dibuat dari kebijakan yang sudah disetujui." };
+    return { error: (await text()).errors.reviseOnlyApproved };
   }
 
   const version = nextMinorVersion(policy.version);
@@ -527,6 +577,7 @@ export async function revisePolicy(policyId: string): Promise<ActionState> {
         type: policy.type,
         department: policy.department,
         parentId: policy.parentId,
+        expiresAt: policy.expiresAt,
         needsReview: false,
         isCurrent: true,
         status: "DRAFT",
@@ -555,12 +606,12 @@ export async function revisePolicy(policyId: string): Promise<ActionState> {
 export async function deletePolicy(policyId: string): Promise<ActionState> {
   const user = await requireUser();
   const policy = await prisma.policy.findUnique({ where: { id: policyId } });
-  if (!policy) return { error: "Kebijakan tidak ditemukan." };
+  if (!policy) return { error: (await text()).errors.policyNotFound };
   if (!policy.isCurrent) {
-    return { error: "Hanya versi terbaru yang dapat dihapus." };
+    return { error: (await text()).errors.deleteOnlyCurrent };
   }
   if (!canDeletePolicy(user.role, policy.status, policy.authorId === user.id)) {
-    return { error: "Hanya draf atau dokumen yang ditolak yang dapat dihapus." };
+    return { error: (await text()).errors.deleteOnlyDraft };
   }
 
   try {
@@ -592,10 +643,10 @@ export async function deletePolicy(policyId: string): Promise<ActionState> {
   });
   } catch (error) {
     if (error instanceof Error && error.message === "PUNYA_TURUNAN") {
-      return { error: "Dokumen ini masih punya turunan. Hapus atau pindahkan turunannya dulu." };
+      return { error: (await text()).errors.hasChildren };
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
-      return { error: "Dokumen ini masih punya turunan. Hapus atau pindahkan turunannya dulu." };
+      return { error: (await text()).errors.hasChildren };
     }
     throw error;
   }
@@ -617,17 +668,18 @@ export async function addReviewNote(
   formData: FormData,
 ): Promise<ActionState> {
   const user = await requireUser();
-  const parsed = requiredNotesSchema.safeParse({
+  const t = await text();
+  const parsed = createRequiredNotesSchema(t.validation).safeParse({
     notes: formData.get("notes"),
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Catatan wajib diisi." };
+    return { error: parsed.error.issues[0]?.message ?? (await text()).errors.notesRequired };
   }
 
   const policy = await prisma.policy.findUnique({ where: { id: policyId } });
-  if (!policy) return { error: "Kebijakan tidak ditemukan." };
+  if (!policy) return { error: (await text()).errors.policyNotFound };
   if (!canAddReviewNote(user.role, policy.status)) {
-    return { error: "Catatan review hanya dapat ditambahkan saat dokumen dalam review." };
+    return { error: (await text()).errors.reviewNoteOnlyInReview };
   }
 
   await prisma.auditLog.create({
@@ -664,22 +716,22 @@ async function transitionPolicy(input: {
 }): Promise<ActionState> {
   const user = await requireUser();
   const policy = await prisma.policy.findUnique({ where: { id: input.policyId } });
-  if (!policy) return { error: "Kebijakan tidak ditemukan." };
+  if (!policy) return { error: (await text()).errors.policyNotFound };
   if (!policy.isCurrent) {
-    return { error: "Aksi ini hanya berlaku untuk versi terbaru." };
+    return { error: (await text()).errors.actionOnlyCurrent };
   }
   if (!input.from.includes(policy.status)) {
-    return { error: "Status kebijakan tidak memungkinkan aksi ini." };
+    return { error: (await text()).errors.statusBlocksAction };
   }
   if (!input.authorize(user, policy)) {
-    return { error: "Anda tidak memiliki akses untuk aksi ini." };
+    return { error: (await text()).errors.noActionAccess };
   }
 
   const enteringReview = input.to === "IN_REVIEW";
   if (enteringReview && policy.parentId) {
     const allowed = await parentAllowsSubmission(policy.parentId);
     if (!allowed) {
-      return { error: "Induk harus sudah disetujui sebelum dokumen ini diajukan." };
+      return { error: (await text()).errors.parentBeforeSubmit };
     }
   }
 
@@ -939,6 +991,11 @@ export async function listDocumentAncestors(parentId: string | null) {
     currentId = parent.parentId;
   }
   return chain;
+}
+
+function expiryFromForm(value: string) {
+  if (!value) return null;
+  return parseExpiryDate(value) ?? "invalid";
 }
 
 function isRedirectError(error: unknown) {

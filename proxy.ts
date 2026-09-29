@@ -27,6 +27,19 @@ export async function proxy(request: NextRequest) {
     return clearLegacyCookies(NextResponse.redirect(login), request);
   }
 
+  if (token?.role && token.mustChangePassword === true && pathname !== "/settings/password") {
+    if (pathname.startsWith("/api/")) {
+      return clearLegacyCookies(
+        NextResponse.json({ error: "Password change required" }, { status: 403 }),
+        request,
+      );
+    }
+    return clearLegacyCookies(
+      NextResponse.redirect(new URL("/settings/password", request.url)),
+      request,
+    );
+  }
+
   if (role && !roleAllowed(pathname, role)) {
     return clearLegacyCookies(
       NextResponse.redirect(new URL("/policies", request.url)),
@@ -54,6 +67,10 @@ function isProtected(pathname: string) {
   return (
     pathname === "/dashboard" ||
     pathname.startsWith("/policies") ||
+    pathname === "/ai-search" ||
+    pathname.startsWith("/ai-search/") ||
+    pathname === "/settings" ||
+    pathname.startsWith("/settings/") ||
     pathname === "/notifications" ||
     pathname.startsWith("/notifications/") ||
     pathname === "/approval" ||
@@ -74,6 +91,18 @@ function roleAllowed(pathname: string, role: Role) {
     return canAccessApprovalQueue(role);
   }
   if (pathname === "/users" || pathname.startsWith("/users/")) {
+    return canManageUsers(role);
+  }
+  if (
+    pathname === "/settings/users" ||
+    pathname.startsWith("/settings/users/") ||
+    pathname === "/settings/roles" ||
+    pathname.startsWith("/settings/roles/") ||
+    pathname === "/settings/organization" ||
+    pathname.startsWith("/settings/organization/") ||
+    pathname === "/settings/integrations" ||
+    pathname.startsWith("/settings/integrations/")
+  ) {
     return canManageUsers(role);
   }
   if (pathname === "/admin" || pathname.startsWith("/admin/")) {

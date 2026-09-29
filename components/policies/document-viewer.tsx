@@ -1,8 +1,9 @@
 import { Download } from "lucide-react";
 import type { DocumentView } from "@/lib/document-view";
 import { fileUrlTtlSeconds, signFileUrl } from "@/lib/signed-file";
+import { fill, getDictionary } from "@/lib/i18n";
 
-export function DocumentViewer({
+export async function DocumentViewer({
   fileUrl,
   fileName,
   view,
@@ -13,9 +14,10 @@ export function DocumentViewer({
   view: DocumentView;
   viewer: { id: string; name?: string | null; email?: string | null };
 }) {
+  const { t } = await getDictionary();
   const downloadHref = signFileUrl(fileUrl, viewer.id, false);
   const inlineHref = signFileUrl(fileUrl, viewer.id, true);
-  const label = `${viewer.name || "Karyawan"} · ${viewer.email || ""}`.trim();
+  const label = `${viewer.name || t.common.employeeFallback} · ${viewer.email || ""}`.trim();
   const minutes = Math.round(fileUrlTtlSeconds() / 60);
 
   return (
@@ -23,10 +25,10 @@ export function DocumentViewer({
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Baca dokumen
+            {t.detail.read}
           </h2>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            Tautan berlaku {minutes} menit dan hanya untuk akun Anda. PDF memuat nama serta email Anda.
+            {fill(t.detail.linkNote, { minutes })}
           </p>
         </div>
         <a
@@ -34,14 +36,14 @@ export function DocumentViewer({
           className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
         >
           <Download className="size-3.5" />
-          Unduh
+          {t.detail.download}
         </a>
       </div>
       {fileName && <p className="mt-2 text-xs text-muted-foreground">{fileName}</p>}
       <div className="relative mt-2">
         {view.kind === "pdf" && (
           <iframe
-            title={fileName ?? "Dokumen PDF"}
+            title={fileName ?? t.detail.pdfTitle}
             src={`${inlineHref}#toolbar=1`}
             className="h-[72vh] min-h-112 w-full rounded-md border bg-white"
           />
@@ -50,7 +52,7 @@ export function DocumentViewer({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={inlineHref}
-            alt={fileName ?? "Pratinjau berkas"}
+            alt={fileName ?? t.detail.imageAlt}
             className="max-h-[72vh] w-full rounded-md border bg-white object-contain"
           />
         )}
@@ -67,7 +69,7 @@ export function DocumentViewer({
         )}
         {view.kind === "unavailable" && (
           <p className="text-xs text-muted-foreground">
-            Isi berkas ini tidak dapat ditampilkan di halaman. Gunakan tombol unduh.
+            {t.detail.unavailable}
           </p>
         )}
         {view.kind !== "pdf" && view.kind !== "unavailable" && <ScreenWatermark label={label} />}

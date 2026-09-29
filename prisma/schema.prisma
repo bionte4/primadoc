@@ -43,6 +43,12 @@ enum Department {
   OPS
 }
 
+/// Display name for a department code. The code itself stays fixed because document numbers use it.
+model DepartmentLabel {
+  code Department @id
+  name String
+}
+
 model User {
   id        String   @id @default(cuid())
   name      String
@@ -55,6 +61,14 @@ model User {
   /// Subject from that IdP (`sub`, or the Entra object id).
   externalId   String?
   role      Role     @default(STAFF)
+  /// Admin can turn this off. An inactive account cannot sign in.
+  active    Boolean  @default(true)
+  /// Set when an admin assigns a local password. Cleared after the user replaces it.
+  mustChangePassword Boolean @default(false)
+  /// Failed local sign-in attempts since the last success. Resets when the account locks.
+  failedLoginCount   Int      @default(0)
+  /// Local sign-in is refused until this time. Workplace sign-in is unchanged.
+  lockedUntil        DateTime?
   /// Approver who receives this person's queue after the review deadline.
   backupApproverId String?
   backupApprover   User?    @relation("ApproverBackup", fields: [backupApproverId], references: [id], onDelete: SetNull)
@@ -89,6 +103,8 @@ model Policy {
   versionGroupId String
   isCurrent      Boolean      @default(true)
   status         PolicyStatus @default(DRAFT)
+  /// Calendar day the approved document stops being current. Empty means no expiry.
+  expiresAt      DateTime?
   type           PolicyType   @default(POLICY)
   department     Department   @default(CORP)
   /// Row id of the parent kebijakan or prosedur. Empty for a kebijakan.
@@ -116,6 +132,7 @@ model Policy {
 
   @@unique([documentNumber, version])
   @@index([status])
+  @@index([status, expiresAt])
   @@index([authorId])
   @@index([versionGroupId])
   @@index([isCurrent])
@@ -178,4 +195,20 @@ model AuditLog {
 
   @@index([policyId])
   @@index([userId])
+}
+
+/// Singleton connection settings. Secrets are encrypted; environment variables are the fallback.
+model IntegrationConfig {
+  id              String   @id @default("default")
+  smtpHost        String?
+  smtpPort        Int?
+  smtpSecure      Boolean  @default(false)
+  smtpUser        String?
+  smtpFrom        String?
+  smtpPasswordEnc String?
+  openaiModel     String?
+  openaiKeyEnc    String?
+  aiProvider      String?
+  aiBaseUrl       String?
+  updatedAt       DateTime @updatedAt
 }

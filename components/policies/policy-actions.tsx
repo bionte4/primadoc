@@ -23,6 +23,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { useI18n } from "@/components/i18n-provider";
 
 export function PolicyActions({
   policyId,
@@ -43,6 +44,7 @@ export function PolicyActions({
   canRevise: boolean;
   canDelete: boolean;
 }) {
+  const { t } = useI18n();
   if (
     !canEdit &&
     !canSubmit &&
@@ -59,22 +61,22 @@ export function PolicyActions({
     <div className="flex flex-col gap-1.5">
       {canEdit && (
         <Button nativeButton={false} render={<Link href={`/policies/${policyId}/edit`} />}>
-          Ubah draf
+          {t.actions.editDraft}
         </Button>
       )}
       {canSubmit && (
         <NoteDialog
-          title="Ajukan Review"
-          description="Dokumen berpindah ke status dalam review. Catatan bersifat opsional."
-          confirmLabel="Ajukan Review"
+          title={t.actions.submitTitle}
+          description={t.actions.submitBody}
+          confirmLabel={t.actions.submitTitle}
           action={submitForReview.bind(null, policyId)}
         />
       )}
       {canReview && (
         <NoteDialog
-          title="Catatan review"
-          description="Rekomendasi ini tercatat di audit log dan terlihat oleh approver."
-          confirmLabel="Simpan catatan"
+          title={t.actions.noteTitle}
+          description={t.actions.noteBody}
+          confirmLabel={t.actions.saveNote}
           notesRequired
           action={addReviewNote.bind(null, policyId)}
         />
@@ -82,15 +84,15 @@ export function PolicyActions({
       {canDecide && (
         <>
           <NoteDialog
-            title="Approve"
-            description="Persetujuan mengunci isi dokumen sampai dibuka sebagai revisi."
-            confirmLabel="Approve"
+            title={t.actions.approveTitle}
+            description={t.actions.approveBody}
+            confirmLabel={t.actions.approveTitle}
             action={approvePolicy.bind(null, policyId)}
           />
           <NoteDialog
-            title="Reject"
-            description="Dokumen kembali menjadi draf. Catatan wajib diisi."
-            confirmLabel="Reject"
+            title={t.actions.rejectTitle}
+            description={t.actions.rejectBody}
+            confirmLabel={t.actions.rejectTitle}
             notesRequired
             destructive
             action={rejectPolicy.bind(null, policyId)}
@@ -100,9 +102,9 @@ export function PolicyActions({
       {canRevise && <ReviseButton policyId={policyId} />}
       {canArchive && (
         <NoteDialog
-          title="Arsipkan"
-          description="Dokumen yang diarsipkan tidak lagi menjadi versi aktif."
-          confirmLabel="Arsipkan"
+          title={t.actions.archiveTitle}
+          description={t.actions.archiveBody}
+          confirmLabel={t.actions.archiveTitle}
           action={archivePolicy.bind(null, policyId)}
         />
       )}
@@ -122,6 +124,7 @@ export function PolicyRowActions({
   canDecide: boolean;
   canDelete: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <div className="flex flex-wrap gap-1">
       <Button
@@ -130,13 +133,13 @@ export function PolicyRowActions({
         nativeButton={false}
         render={<Link href={`/policies/${policyId}`} />}
       >
-        Lihat
+        {t.table.view}
       </Button>
       {canSubmit && (
         <NoteDialog
-          title="Ajukan Review"
-          description="Dokumen berpindah ke status dalam review. Catatan bersifat opsional."
-          confirmLabel="Ajukan Review"
+          title={t.actions.submitTitle}
+          description={t.actions.submitBody}
+          confirmLabel={t.actions.submitTitle}
           size="xs"
           action={submitForReview.bind(null, policyId)}
         />
@@ -144,16 +147,16 @@ export function PolicyRowActions({
       {canDecide && (
         <>
           <NoteDialog
-            title="Approve"
-            description="Persetujuan mengunci isi dokumen sampai dibuka sebagai revisi."
-            confirmLabel="Approve"
+            title={t.actions.approveTitle}
+            description={t.actions.approveBody}
+            confirmLabel={t.actions.approveTitle}
             size="xs"
             action={approvePolicy.bind(null, policyId)}
           />
           <NoteDialog
-            title="Reject"
-            description="Dokumen kembali menjadi draf. Catatan wajib diisi."
-            confirmLabel="Reject"
+            title={t.actions.rejectTitle}
+            description={t.actions.rejectBody}
+            confirmLabel={t.actions.rejectTitle}
             notesRequired
             destructive
             size="xs"
@@ -185,6 +188,7 @@ function NoteDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(action, {});
+  const { t } = useI18n();
 
   useEffect(() => {
     if (state.ok) setOpen(false);
@@ -206,13 +210,13 @@ function NoteDialog({
           <Textarea
             name="notes"
             required={notesRequired}
-            placeholder={notesRequired ? "Tulis catatan" : "Catatan (opsional)"}
+            placeholder={notesRequired ? t.common.requiredNotes : t.common.optionalNotes}
             className="min-h-24"
           />
           {state.error && <p className="text-sm text-destructive">{state.error}</p>}
           <DialogFooter>
             <Button type="submit" variant={destructive ? "destructive" : "default"} disabled={pending}>
-              {pending ? "Memproses..." : confirmLabel}
+              {pending ? t.common.processing : confirmLabel}
             </Button>
           </DialogFooter>
         </form>
@@ -233,22 +237,23 @@ function DeleteButton({
     async (_prev: ActionState) => deletePolicy(policyId),
     {},
   );
+  const { t } = useI18n();
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size={size} variant="destructive" />}>Hapus</DialogTrigger>
+      <DialogTrigger render={<Button size={size} variant="destructive" />}>{t.actions.delete}</DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Hapus kebijakan</DialogTitle>
+          <DialogTitle>{t.actions.deleteTitle}</DialogTitle>
           <DialogDescription>
-            Draf atau dokumen yang ditolak akan dihapus bersama riwayat workflow-nya.
+            {t.actions.deleteBody}
           </DialogDescription>
         </DialogHeader>
         <form action={formAction} className="space-y-3">
           {state.error && <p className="text-sm text-destructive">{state.error}</p>}
           <DialogFooter>
             <Button type="submit" variant="destructive" disabled={pending}>
-              {pending ? "Menghapus..." : "Hapus"}
+              {pending ? t.actions.deleting : t.actions.delete}
             </Button>
           </DialogFooter>
         </form>
@@ -262,12 +267,13 @@ function ReviseButton({ policyId }: { policyId: string }) {
     async (_prev: ActionState) => revisePolicy(policyId),
     {},
   );
+  const { t } = useI18n();
 
   return (
     <form action={formAction}>
       {state.error && <p className="mb-2 text-sm text-destructive">{state.error}</p>}
       <Button type="submit" variant="outline" disabled={pending}>
-        {pending ? "Membuka revisi..." : "Buat revisi"}
+        {pending ? t.actions.revising : t.actions.revise}
       </Button>
     </form>
   );

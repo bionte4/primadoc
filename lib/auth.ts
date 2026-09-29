@@ -19,6 +19,7 @@ import {
   workplaceEmail,
   workplaceSubject,
 } from "@/lib/workplace-auth";
+import { LOCK_MINUTES, MAX_FAILED_LOGINS } from "@/lib/password-policy";
 import { sessionCookieName } from "@/lib/session-cookie";
 
 const useSecureCookies = sessionCookieName.startsWith("__Secure-");
@@ -61,16 +62,40 @@ export const authOptions: NextAuthOptions = {
         if (!email || !password) return null;
 
         const user = await findInvitedUser(email);
-        if (!user?.password) return null;
+        if (!user?.password || !user.active) return null;
+
+        const now = new Date();
+        if (user.lockedUntil && user.lockedUntil > now) return null;
 
         const valid = await bcrypt.compare(password, user.password);
-        if (!valid) return null;
+        if (!valid) {
+          const failed = user.failedLoginCount + 1;
+          const lock = failed >= MAX_FAILED_LOGINS;
+          await prisma.user.update({
+            where: { id: user.id },
+            data: lock
+              ? {
+                  failedLoginCount: 0,
+                  lockedUntil: new Date(now.getTime() + LOCK_MINUTES * 60_000),
+                }
+              : { failedLoginCount: failed },
+          });
+          return null;
+        }
+
+        if (user.failedLoginCount > 0 || user.lockedUntil) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { failedLoginCount: 0, lockedUntil: null },
+          });
+        }
 
         return {
           id: user.id,
           name: user.name,
           email: user.email,
           role: user.role,
+          mustChangePassword: user.mustChangePassword,
         };
       },
     }),
@@ -130,7 +155,7 @@ export const authOptions: NextAuthOptions = {
 
       const email = workplaceEmail(profile, user.email);
       const invited = email ? await findInvitedUser(email) : null;
-      if (!invited) return "/login?error=AccessDenied";
+      if (!invited || !invited.active) return "/login?error=AccessDenied";
 
       const subject = workplaceSubject(profile);
       const link = {
@@ -155,11 +180,37 @@ export const authOptions: NextAuthOptions = {
         token.role = invited.role;
         token.email = invited.email;
         token.name = invited.name;
+        token.provider = account.provider;
+        token.mustChangePassword = false;
         return token;
       }
+      if (account?.provider) token.provider = account.provider;
       if (user) {
         token.id = user.id;
         token.role = user.role;
+      }
+      if (typeof token.id === "string") {
+        const row = await prisma.user.findUnique({
+          where: { id: token.id },
+          select: {
+            role: true,
+            name: true,
+            email: true,
+            active: true,
+            mustChangePassword: true,
+          },
+        });
+        if (!row || !row.active) {
+          delete token.role;
+          token.active = false;
+          token.mustChangePassword = false;
+          return token;
+        }
+        token.role = row.role;
+        token.name = row.name;
+        token.email = row.email;
+        token.active = true;
+        token.mustChangePassword = token.provider === "credentials" && row.mustChangePassword;
       }
       return token;
     },
@@ -167,6 +218,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = token.role as Role;
+        session.user.mustChangePassword = token.mustChangePassword === true;
       }
       return session;
     },

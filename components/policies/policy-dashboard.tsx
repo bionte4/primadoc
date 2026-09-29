@@ -1,18 +1,20 @@
 import Link from "next/link";
-import { countPolicies, listPolicies } from "@/actions/policies";
+import { ClipboardCheck, Sparkles, Upload } from "lucide-react";
+import { countPolicies } from "@/actions/policies";
 import { TaxonomyFilters } from "@/components/policies/policy-filters";
-import { StatusBadge } from "@/components/policies/status-badge";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
-import { POLICY_STATUSES, STATUS_LABEL } from "@/lib/constants";
-import { DEPARTMENT_LABEL } from "@/lib/document-kind";
-import { formatDateTime } from "@/lib/format";
-import {
-  canAccessApprovalQueue,
-  canCreatePolicy,
-  type SessionUser,
-} from "@/lib/rbac";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { MetricGrid, type MetricItem } from "@/components/ui/metric-grid";
+import { getDepartmentLabels } from "@/lib/department-labels";
+import { formatDate } from "@/lib/format";
+import { fill, getDictionary, localizeDepartments } from "@/lib/i18n";
+import { listExpiringPolicies, listPendingReviews, type MonitorItem } from "@/lib/monitoring";
+import { canAccessApprovalQueue, canCreatePolicy, canRevise, type SessionUser } from "@/lib/rbac";
+import type { Dictionary } from "@/lib/i18n/dictionary";
+import type { Locale } from "@/lib/i18n/labels";
 import type { PolicyStatus } from "@prisma/client";
+
+const QUICK_STATUSES = ["DRAFT", "IN_REVIEW", "APPROVED", "ARCHIVED"] as const satisfies readonly PolicyStatus[];
 
 export async function PolicyDashboard({
   user,
@@ -23,105 +25,112 @@ export async function PolicyDashboard({
   department?: string;
   documentType?: string;
 }) {
-  const [policies, counts] = await Promise.all([
-    listPolicies(user, "", "", documentType, department),
+  const [counts, storedLabels, pending, expiring, { locale, t }] = await Promise.all([
     countPolicies(user, documentType, department),
+    getDepartmentLabels(),
+    listPendingReviews(user, documentType, department),
+    listExpiringPolicies(user, documentType, department),
+    getDictionary(),
   ]);
-  const total = POLICY_STATUSES.reduce((sum, status) => sum + counts[status], 0);
-  const focus = focusStatuses(user.role);
-  const attention = policies.filter((policy) => focus.includes(policy.status)).slice(0, 5);
-  const recent = policies.slice(0, 5);
+  const labels = localizeDepartments(storedLabels, t);
+  const name = user.name?.trim() || t.dashboard.guest;
 
   return (
-    <div className="flex w-full flex-col gap-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)] items-start gap-3 xl:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="flex min-w-0 flex-col gap-3">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-xs text-muted-foreground">{focusCopy(user.role)}</p>
+          <h1 className="text-lg font-semibold tracking-tight">{fill(t.dashboard.welcome, { name })}</h1>
+          <p className="text-xs text-muted-foreground">
+            {t.dashboard.summary}
+          </p>
         </div>
-        {canCreatePolicy(user.role) && (
-          <Button size="sm" nativeButton={false} render={<Link href="/policies/new" />}>
-            <Plus />
-            Buat Kebijakan Baru
-          </Button>
-        )}
-      </div>
 
-      <TaxonomyFilters department={department} documentType={documentType} />
+        <TaxonomyFilters department={department} documentType={documentType} labels={labels} />
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Semua" value={total} href={statHref("/policies", department, documentType)} />
-        {POLICY_STATUSES.map((status) => (
-          <Stat
-            key={status}
-            label={STATUS_LABEL[status]}
-            value={counts[status]}
-            href={statHref(`/policies?status=${status}`, department, documentType)}
-          />
-        ))}
-      </div>
+        <MetricGrid
+          title={t.dashboard.statusTitle}
+          description={t.dashboard.statusDescription}
+          columns={4}
+          loadingLabel={t.common.loadingMetrics}
+          emptyLabel={t.common.noMetrics}
+          metrics={overviewMetrics(counts, department, documentType, t)}
+        />
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <section className="rounded-lg bg-card ring-1 ring-foreground/10">
-          <header className="flex items-center justify-between gap-3 px-3 py-2">
-            <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              {focusTitle(user.role)}
-            </h2>
-            <Link href={focusHref(user.role, department, documentType)} className="text-xs font-medium text-primary hover:underline">
-              Lihat semua
-            </Link>
-          </header>
-          <PolicyLinks
-            policies={attention}
-            emptyLabel={
-              user.role === "STAFF"
-                ? "Tidak ada draf atau penolakan yang menunggu Anda."
-                : "Tidak ada dokumen yang sedang dalam review."
-            }
-          />
-        </section>
-
-        <section className="rounded-lg bg-card ring-1 ring-foreground/10">
-          <header className="flex items-center justify-between gap-3 px-3 py-2">
-            <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Diperbarui baru-baru ini
-            </h2>
-            <Link
-              href={statHref("/policies", department, documentType)}
-              className="text-xs font-medium text-primary hover:underline"
+        <section aria-labelledby="quick-actions-heading" className="flex flex-col gap-2">
+          <h2 id="quick-actions-heading" className="text-sm font-medium">
+            {t.dashboard.quick}
+          </h2>
+          <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
+            {canCreatePolicy(user.role) && (
+              <Button className="justify-start" nativeButton={false} render={<Link href="/policies/new" />}>
+                <Upload />
+                {t.dashboard.upload}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              className="justify-start"
+              nativeButton={false}
+              render={<Link href="/ai-search" />}
             >
-              Daftar dokumen
-            </Link>
-          </header>
-          <PolicyLinks policies={recent} emptyLabel="Belum ada kebijakan." />
+              <Sparkles />
+              {t.dashboard.ai}
+            </Button>
+            {canAccessApprovalQueue(user.role) && (
+              <Button
+                variant="outline"
+                className="justify-start"
+                nativeButton={false}
+                render={<Link href="/approval" />}
+              >
+                <ClipboardCheck />
+                {t.dashboard.awaiting}
+              </Button>
+            )}
+          </div>
         </section>
       </div>
+
+      <aside className="flex min-w-0 flex-col gap-3" aria-label={t.dashboard.side}>
+        <MonitorCard
+          title={t.dashboard.pendingTitle}
+          description={t.dashboard.pendingDescription}
+          emptyLabel={t.dashboard.pendingEmpty}
+          items={pending}
+          user={user}
+          locale={locale}
+          updateLabel={t.dashboard.update}
+          endsLabel={t.dashboard.ends}
+        />
+        <MonitorCard
+          title={t.dashboard.expiringTitle}
+          description={t.dashboard.expiringDescription}
+          emptyLabel={t.dashboard.expiringEmpty}
+          items={expiring}
+          user={user}
+          showExpiry
+          locale={locale}
+          updateLabel={t.dashboard.update}
+          endsLabel={t.dashboard.ends}
+        />
+      </aside>
     </div>
   );
 }
 
-function focusStatuses(role: SessionUser["role"]): PolicyStatus[] {
-  if (role === "STAFF") return ["DRAFT", "REJECTED"];
-  return ["IN_REVIEW"];
-}
-
-function focusTitle(role: SessionUser["role"]) {
-  if (role === "STAFF") return "Perlu Anda lanjutkan";
-  if (canAccessApprovalQueue(role) && role !== "ADMIN") return "Menunggu keputusan";
-  return "Sedang dalam review";
-}
-
-function focusCopy(role: SessionUser["role"]) {
-  if (role === "STAFF") return "Draf dan penolakan Anda, plus kebijakan yang baru berubah.";
-  if (role === "APPROVER") return "Dokumen yang menunggu keputusan Anda.";
-  if (role === "REVIEWER") return "Dokumen yang sedang dalam review.";
-  return "Ringkasan siklus dokumen. Daftar lengkap ada di menu kebijakan.";
-}
-
-function focusHref(role: SessionUser["role"], department: string, documentType: string) {
-  if (role === "STAFF") return statHref("/policies?status=DRAFT", department, documentType);
-  if (canAccessApprovalQueue(role)) return "/approval";
-  return statHref("/policies?status=IN_REVIEW", department, documentType);
+function overviewMetrics(
+  counts: Record<PolicyStatus, number>,
+  department: string,
+  documentType: string,
+  t: Dictionary,
+): MetricItem[] {
+  return QUICK_STATUSES.map((status) => ({
+    id: status,
+    label: t.status[status],
+    hint: status === "APPROVED" ? t.status.published : undefined,
+    value: counts[status],
+    href: statHref(`/policies?status=${status}`, department, documentType),
+  }));
 }
 
 function statHref(href: string, department: string, documentType: string) {
@@ -131,54 +140,68 @@ function statHref(href: string, department: string, documentType: string) {
   return `${url.pathname}${url.search}`;
 }
 
-function Stat({ label, value, href }: { label: string; value: number; href: string }) {
-  return (
-    <Link
-      href={href}
-      className="rounded-lg bg-card px-3 py-2.5 ring-1 ring-foreground/10 hover:bg-muted/60"
-    >
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-xl font-semibold tabular-nums tracking-tight">{value}</p>
-    </Link>
-  );
-}
-
-function PolicyLinks({
-  policies,
+function MonitorCard({
+  title,
+  description,
   emptyLabel,
+  items,
+  user,
+  showExpiry = false,
+  locale,
+  updateLabel,
+  endsLabel,
 }: {
-  policies: {
-    id: string;
-    title: string;
-    documentNumber: string;
-    department: keyof typeof DEPARTMENT_LABEL;
-    status: PolicyStatus;
-    updatedAt: Date;
-  }[];
+  title: string;
+  description: string;
   emptyLabel: string;
+  items: MonitorItem[];
+  user: SessionUser;
+  showExpiry?: boolean;
+  locale: Locale;
+  updateLabel: string;
+  endsLabel: string;
 }) {
-  if (policies.length === 0) {
-    return <p className="px-3 pb-3 text-xs text-muted-foreground">{emptyLabel}</p>;
-  }
-
   return (
-    <ul className="border-t border-border/70">
-      {policies.map((policy) => (
-        <li key={policy.id} className="border-b border-border/70 last:border-b-0">
-          <Link
-            href={`/policies/${policy.id}`}
-            className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-muted/50"
-          >
-            <span className="min-w-0">
-              <span className="block truncate text-[13px] font-medium">{policy.title}</span>
-              <span className="block truncate text-[11px] text-muted-foreground">
-                {policy.documentNumber} · {DEPARTMENT_LABEL[policy.department]} · {formatDateTime(policy.updatedAt)}
-              </span>
-            </span>
-            <StatusBadge status={policy.status} />
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <Card size="sm" className="dark:bg-card">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {items.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{emptyLabel}</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {items.map((item) => (
+              <li key={item.id} className="border-b border-border/70 pb-2 last:border-b-0 last:pb-0">
+                <Link
+                  href={`/policies/${item.id}`}
+                  className="block min-w-0 rounded-md outline-none hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  <span className="block truncate text-[13px] font-medium">{item.title}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {item.documentNumber}
+                    {showExpiry && item.expiresAt
+                      ? ` · ${fill(endsLabel, { date: formatDate(item.expiresAt, locale) })}`
+                      : ""}
+                  </span>
+                </Link>
+                {showExpiry && canRevise(user.role, item.status, item.authorId === user.id) ? (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    className="mt-1.5"
+                    nativeButton={false}
+                    render={<Link href={`/policies/${item.id}`} />}
+                  >
+                    {updateLabel}
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }

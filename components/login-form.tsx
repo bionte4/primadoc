@@ -3,43 +3,49 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { loginFailureHint } from "@/actions/login";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DEMO_PASSWORD, ROLE_LABEL } from "@/lib/constants";
+import { useI18n } from "@/components/i18n-provider";
+import { fill } from "@/lib/i18n/labels";
 import type { Role } from "@prisma/client";
 
-const loginSchema = z.object({
-  email: z.email("Masukkan email yang valid"),
-  password: z.string().min(1, "Kata sandi wajib diisi"),
-});
+type LoginValues = z.infer<ReturnType<typeof loginSchema>>;
 
-type LoginValues = z.infer<typeof loginSchema>;
-
-const DEMO_ACCOUNTS: { role: Role; email: string; name: string }[] = [
-  { role: "STAFF", name: "Anita Putri", email: "staff@prismadoc.local" },
-  { role: "REVIEWER", name: "Budi Santoso", email: "reviewer@prismadoc.local" },
-  { role: "APPROVER", name: "Citra Wijaya", email: "approver@prismadoc.local" },
-  { role: "ADMIN", name: "Dimas Hartono", email: "admin@prismadoc.local" },
-];
+function loginSchema(email: string, password: string) {
+  return z.object({
+    email: z.email(email),
+    password: z.string().min(1, password),
+  });
+}
 
 export function LoginForm({
   callbackUrl = "/policies",
   workplaceProviders = [],
   workplaceError = null,
+  demoPassword = null,
+  demoAccounts = null,
 }: {
   callbackUrl?: string;
   workplaceProviders?: { id: string; label: string }[];
   workplaceError?: string | null;
+  demoPassword?: string | null;
+  demoAccounts?: { role: Role; email: string; name: string }[] | null;
 }) {
   const router = useRouter();
+  const { t } = useI18n();
+  const schema = useMemo(
+    () => loginSchema(t.validation.email, t.validation.passwordRequired),
+    [t],
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingProvider, setPendingProvider] = useState<string | null>(null);
   const form = useForm<LoginValues>({
-    resolver: zodResolver(loginSchema),
+    resolver: zodResolver(schema),
     defaultValues: { email: "", password: "" },
   });
 
@@ -52,7 +58,8 @@ export function LoginForm({
     });
 
     if (!result || result.error) {
-      setFormError("Email atau kata sandi tidak sesuai.");
+      const hint = await loginFailureHint(values.email);
+      setFormError(hint === "locked" ? t.login.locked : t.login.mismatch);
       return;
     }
 
@@ -78,20 +85,20 @@ export function LoginForm({
                   void signIn(provider.id, { callbackUrl });
                 }}
               >
-                {pendingProvider === provider.id ? "Mengalihkan..." : provider.label}
+                {pendingProvider === provider.id ? t.login.redirecting : provider.label}
               </Button>
             ))}
           </div>
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <span className="h-px flex-1 bg-border" />
-            atau akun lokal
+            {t.login.orLocal}
             <span className="h-px flex-1 bg-border" />
           </div>
         </>
       )}
     <form className="space-y-3" onSubmit={form.handleSubmit(onSubmit)}>
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email">{t.login.email}</Label>
         <Input
           id="email"
           type="email"
@@ -104,7 +111,7 @@ export function LoginForm({
         )}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="password">Kata sandi</Label>
+        <Label htmlFor="password">{t.login.password}</Label>
         <Input
           id="password"
           type="password"
@@ -120,32 +127,34 @@ export function LoginForm({
       </div>
       {formError && <p className="text-sm text-destructive">{formError}</p>}
       <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-        {form.formState.isSubmitting ? "Memeriksa..." : "Masuk"}
+        {form.formState.isSubmitting ? t.login.checking : t.login.submit}
       </Button>
+      {demoPassword && demoAccounts ? (
       <div className="rounded-lg border bg-muted/40 p-2">
         <p className="px-2 text-[11px] font-medium text-muted-foreground">
-          Akun percobaan · kata sandi {DEMO_PASSWORD}
+          {fill(t.login.demo, { password: demoPassword })}
         </p>
         <ul className="mt-1">
-          {DEMO_ACCOUNTS.map((account) => (
+          {demoAccounts.map((account) => (
             <li key={account.email}>
               <button
                 type="button"
                 className="flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[13px] hover:bg-background"
                 onClick={() => {
                   form.setValue("email", account.email, { shouldValidate: true });
-                  form.setValue("password", DEMO_PASSWORD, { shouldValidate: true });
+                  form.setValue("password", demoPassword, { shouldValidate: true });
                 }}
               >
                 <span>{account.name}</span>
                 <span className="text-xs text-muted-foreground">
-                  {ROLE_LABEL[account.role]}
+                  {t.role[account.role]}
                 </span>
               </button>
             </li>
           ))}
         </ul>
       </div>
+      ) : null}
     </form>
     </div>
   );

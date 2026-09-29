@@ -4,7 +4,7 @@ import { reviewDeadline, reviewSlaDays } from "@/lib/review-sla";
 
 export async function findPrimaryApproverId() {
   const approver = await prisma.user.findFirst({
-    where: { role: "APPROVER" },
+    where: { role: "APPROVER", active: true },
     orderBy: { createdAt: "asc" },
     select: { id: true },
   });
@@ -27,20 +27,22 @@ export async function escalateStaleReviews(now = new Date()) {
           id: true,
           name: true,
           role: true,
-          backupApprover: { select: { id: true, name: true, role: true } },
+          active: true,
+          backupApprover: { select: { id: true, name: true, role: true, active: true } },
         },
       },
     },
   });
 
   const fallbackPrimary = await prisma.user.findFirst({
-    where: { role: "APPROVER" },
+    where: { role: "APPROVER", active: true },
     orderBy: { createdAt: "asc" },
     select: {
       id: true,
       name: true,
       role: true,
-      backupApprover: { select: { id: true, name: true, role: true } },
+      active: true,
+      backupApprover: { select: { id: true, name: true, role: true, active: true } },
     },
   });
 
@@ -51,11 +53,13 @@ export async function escalateStaleReviews(now = new Date()) {
     const startedAt = policy.reviewStartedAt ?? policy.approvals[0]?.createdAt ?? policy.updatedAt;
     if (!reviewDeadline(startedAt, now)) continue;
 
-    const primary = policy.primaryApprover ?? fallbackPrimary;
+    const assigned = policy.primaryApprover;
+    const primary = assigned?.active ? assigned : fallbackPrimary;
     if (!primary) continue;
 
     const backup = primary.backupApprover;
-    const canDelegate = backup && backup.role === "APPROVER" && backup.id !== primary.id;
+    const canDelegate =
+      backup && backup.active && backup.role === "APPROVER" && backup.id !== primary.id;
 
     if (canDelegate && backup) {
       await delegateReview({

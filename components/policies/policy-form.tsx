@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { startTransition, useActionState, useRef, useState } from "react";
+import { startTransition, useActionState, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   createPolicy,
@@ -12,12 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useI18n } from "@/components/i18n-provider";
 import { POLICY_CATEGORIES } from "@/lib/constants";
-import { DEPARTMENT_LABEL, DEPARTMENTS, parentTypeFor, POLICY_TYPES, TIER_LABEL } from "@/lib/document-kind";
+import type { DepartmentLabels } from "@/lib/department-labels";
+import { DEPARTMENTS, parentTypeFor, POLICY_TYPES } from "@/lib/document-kind";
+import { categoryLabel, fill } from "@/lib/i18n/labels";
 import { formatVersion, nextMajorVersion, nextMinorVersion } from "@/lib/version";
 import type { Department, PolicyType } from "@prisma/client";
 import {
-  policyFormSchema,
+  createPolicyFormSchema,
   type PolicyFormValues,
 } from "@/lib/validators/policy";
 
@@ -41,6 +44,7 @@ export function PolicyForm({
   currentVersion,
   parents = [],
   lockType = false,
+  departmentLabels,
 }: {
   mode: "create" | "edit";
   policyId?: string;
@@ -49,7 +53,11 @@ export function PolicyForm({
   currentVersion?: string;
   parents?: ParentChoice[];
   lockType?: boolean;
+  departmentLabels?: DepartmentLabels;
 }) {
+  const { t } = useI18n();
+  const schema = useMemo(() => createPolicyFormSchema(t.validation), [t]);
+  const names = departmentLabels ?? t.department;
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [versionBump, setVersionBump] = useState<"minor" | "major">("minor");
@@ -61,7 +69,7 @@ export function PolicyForm({
   );
 
   const form = useForm<PolicyFormValues>({
-    resolver: zodResolver(policyFormSchema),
+    resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
       title: "",
       documentNumber: "",
@@ -70,6 +78,7 @@ export function PolicyForm({
       description: "",
       type: "POLICY",
       parentId: "",
+      expiresAt: "",
     },
   });
   const documentType = form.watch("type");
@@ -81,7 +90,7 @@ export function PolicyForm({
   function onSubmit(values: PolicyFormValues) {
     const file = fileRef.current?.files?.[0];
     if (mode === "create" && (!file || file.size === 0)) {
-      setFileError("Lampirkan berkas dokumen.");
+      setFileError(t.form.fileRequired);
       return;
     }
     setFileError(null);
@@ -92,6 +101,7 @@ export function PolicyForm({
     formData.set("category", form.getValues("category"));
     formData.set("department", form.getValues("department"));
     formData.set("description", values.description);
+    formData.set("expiresAt", values.expiresAt ?? "");
     formData.set("type", form.getValues("type"));
     const parentId = form.getValues("parentId");
     if (parentId) formData.set("parentId", parentId);
@@ -106,12 +116,12 @@ export function PolicyForm({
     <form className="space-y-3" onSubmit={form.handleSubmit(onSubmit)}>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="title">Judul</Label>
+          <Label htmlFor="title">{t.form.title}</Label>
           <Input id="title" className="h-9" {...form.register("title")} />
           <FieldError message={form.formState.errors.title?.message} />
         </div>
         <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="type">Jenis dokumen</Label>
+          <Label htmlFor="type">{t.form.type}</Label>
           <select
             id="type"
             className={fieldClass}
@@ -124,7 +134,7 @@ export function PolicyForm({
           >
             {POLICY_TYPES.map((item) => (
               <option key={item} value={item}>
-                {TIER_LABEL[item]}
+                {t.tier[item]}
               </option>
             ))}
           </select>
@@ -132,7 +142,7 @@ export function PolicyForm({
         </div>
         {isChild && (
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="parentId">Dokumen induk</Label>
+            <Label htmlFor="parentId">{t.form.parent}</Label>
             <select
               id="parentId"
               className={fieldClass}
@@ -149,7 +159,7 @@ export function PolicyForm({
                 },
               })}
             >
-              <option value="">Pilih dokumen induk</option>
+              <option value="">{t.form.chooseParent}</option>
               {parentOptions.map((parent) => (
                 <option key={parent.id} value={parent.id}>
                   {parent.documentNumber} · {parent.title}
@@ -157,19 +167,17 @@ export function PolicyForm({
               ))}
               {selectedParentId &&
                 !parentOptions.some((parent) => parent.id === selectedParentId) && (
-                  <option value={selectedParentId}>Dokumen induk saat ini</option>
+                  <option value={selectedParentId}>{t.form.currentParent}</option>
                 )}
             </select>
             <p className="text-[11px] text-muted-foreground">
-              {documentType === "PROCEDURE"
-                ? "Prosedur mengikuti kebijakan yang sudah disetujui."
-                : "Petunjuk teknis mengikuti prosedur yang sudah disetujui."}
+              {documentType === "PROCEDURE" ? t.form.procedureHint : t.form.guideHint}
             </p>
             <FieldError message={form.formState.errors.parentId?.message} />
           </div>
         )}
         <div className="space-y-2">
-          <Label htmlFor="department">Departemen</Label>
+          <Label htmlFor="department">{t.form.department}</Label>
           <select
             id="department"
             className={fieldClass}
@@ -178,20 +186,20 @@ export function PolicyForm({
           >
             {DEPARTMENTS.map((item) => (
               <option key={item} value={item}>
-                {DEPARTMENT_LABEL[item]}
+                {names[item]}
               </option>
             ))}
           </select>
           {isChild && (
-            <p className="text-[11px] text-muted-foreground">Departemen mengikuti dokumen induk.</p>
+            <p className="text-[11px] text-muted-foreground">{t.form.departmentFollows}</p>
           )}
           <FieldError message={form.formState.errors.department?.message} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="documentNumber">Nomor dokumen</Label>
+          <Label htmlFor="documentNumber">{t.form.number}</Label>
           {mode === "create" ? (
             <p id="documentNumber" className="flex h-9 items-center text-sm text-muted-foreground">
-              Diisi otomatis, misalnya IT/POL/001/2026
+              {t.form.numberAuto}
             </p>
           ) : (
             <Input
@@ -204,7 +212,7 @@ export function PolicyForm({
           <FieldError message={form.formState.errors.documentNumber?.message} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="category">Kategori</Label>
+          <Label htmlFor="category">{t.form.category}</Label>
           <select
             id="category"
             className={fieldClass}
@@ -213,14 +221,14 @@ export function PolicyForm({
           >
             {POLICY_CATEGORIES.map((category) => (
               <option key={category} value={category}>
-                {category}
+                {categoryLabel(category, t)}
               </option>
             ))}
           </select>
           <FieldError message={form.formState.errors.category?.message} />
         </div>
         <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="description">Deskripsi</Label>
+          <Label htmlFor="description">{t.form.description}</Label>
           <Textarea
             id="description"
             className="min-h-24"
@@ -228,8 +236,14 @@ export function PolicyForm({
           />
           <FieldError message={form.formState.errors.description?.message} />
         </div>
+        <div className="space-y-2">
+          <Label htmlFor="expiresAt">{t.form.expires}</Label>
+          <Input id="expiresAt" type="date" className="h-9" {...form.register("expiresAt")} />
+          <p className="text-[11px] text-muted-foreground">{t.form.expiresHint}</p>
+          <FieldError message={form.formState.errors.expiresAt?.message} />
+        </div>
         <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="file">Berkas</Label>
+          <Label htmlFor="file">{t.form.file}</Label>
           <Input
             id="file"
             ref={fileRef}
@@ -238,14 +252,14 @@ export function PolicyForm({
             className="h-10 pt-1.5"
           />
           <p className="text-xs text-muted-foreground">
-            PDF, DOC, DOCX, PNG, atau JPG. Maksimal 10 MB.
-            {currentFileName ? ` Berkas saat ini: ${currentFileName}.` : ""}
+            {t.form.fileHint}
+            {currentFileName ? ` ${fill(t.form.currentFile, { name: currentFileName })}` : ""}
           </p>
           <FieldError message={fileError} />
         </div>
         {mode === "edit" && currentVersion && (
           <fieldset className="space-y-1.5 sm:col-span-2">
-            <legend className="text-sm font-medium">Versi baru</legend>
+            <legend className="text-sm font-medium">{t.form.newVersion}</legend>
             <label className="flex items-center gap-2 text-[13px]">
               <input
                 type="radio"
@@ -254,7 +268,10 @@ export function PolicyForm({
                 checked={versionBump === "minor"}
                 onChange={() => setVersionBump("minor")}
               />
-              Minor, {formatVersion(currentVersion)} menjadi {formatVersion(nextMinorVersion(currentVersion))}
+              {fill(t.form.minor, {
+                from: formatVersion(currentVersion),
+                to: formatVersion(nextMinorVersion(currentVersion)),
+              })}
             </label>
             <label className="flex items-center gap-2 text-[13px]">
               <input
@@ -264,14 +281,17 @@ export function PolicyForm({
                 checked={versionBump === "major"}
                 onChange={() => setVersionBump("major")}
               />
-              Mayor, {formatVersion(currentVersion)} menjadi {formatVersion(nextMajorVersion(currentVersion))}
+              {fill(t.form.major, {
+                from: formatVersion(currentVersion),
+                to: formatVersion(nextMajorVersion(currentVersion)),
+              })}
             </label>
           </fieldset>
         )}
       </div>
       {state.error && <p className="text-sm text-destructive">{state.error}</p>}
       <Button type="submit" disabled={pending}>
-        {pending ? "Menyimpan..." : mode === "create" ? "Simpan draf" : "Simpan perubahan"}
+        {pending ? t.common.saving : mode === "create" ? t.form.saveDraft : t.form.saveChanges}
       </Button>
     </form>
   );

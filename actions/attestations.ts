@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { canAttest, canViewPolicy } from "@/lib/rbac";
 import { requireUser } from "@/lib/session";
+import { getDictionary } from "@/lib/i18n";
 import type { ActionState } from "@/actions/policies";
 
 export async function attestPolicy(policyId: string): Promise<ActionState> {
   const user = await requireUser();
+  const { t } = await getDictionary();
   if (!canAttest(user.role)) {
-    return { error: "Konfirmasi baca hanya untuk staf." };
+    return { error: t.errors.attestStaffOnly };
   }
 
   const policy = await prisma.policy.findUnique({
@@ -17,7 +19,7 @@ export async function attestPolicy(policyId: string): Promise<ActionState> {
     select: { id: true, status: true, authorId: true, documentNumber: true },
   });
   if (!policy || !canViewPolicy(user.role, policy.status, policy.authorId === user.id)) {
-    return { error: "Kebijakan tidak ditemukan." };
+    return { error: t.errors.policyNotFound };
   }
 
   await prisma.attestation.upsert({

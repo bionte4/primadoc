@@ -11,8 +11,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DEPARTMENT_LABEL } from "@/lib/document-kind";
+import { getDepartmentLabels } from "@/lib/department-labels";
 import { formatDateTime } from "@/lib/format";
+import { categoryLabel, getDictionary, localizeDepartments } from "@/lib/i18n";
 import { canDecide, canDeletePolicy, canSubmitForReview, type SessionUser } from "@/lib/rbac";
 import { formatVersion } from "@/lib/version";
 
@@ -34,7 +35,7 @@ export type PolicyListItem = {
   snippet: { text: string; match: boolean }[] | null;
 };
 
-export function PolicyTable({
+export async function PolicyTable({
   policies,
   user,
   emptyLabel,
@@ -43,40 +44,43 @@ export function PolicyTable({
   user: SessionUser;
   emptyLabel: string;
 }) {
+  const [{ locale, t }, storedLabels] = await Promise.all([getDictionary(), getDepartmentLabels()]);
+  const labels = localizeDepartments(storedLabels, t);
+
   return (
     <div className="overflow-hidden rounded-lg bg-card ring-1 ring-foreground/10">
       <Table className="min-w-[760px]">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Nomor
+              {t.table.number}
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Judul
+              {t.table.title}
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Kategori
+              {t.table.category}
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Versi
+              {t.table.version}
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Departemen
+              {t.table.department}
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Tier
+              {t.table.tier}
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Status
+              {t.table.status}
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Penulis
+              {t.table.author}
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Diperbarui
+              {t.table.updated}
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Aksi
+              {t.table.actions}
             </TableHead>
           </TableRow>
         </TableHeader>
@@ -113,12 +117,12 @@ export function PolicyTable({
                     </p>
                   )}
                 </TableCell>
-                <TableCell className="px-2.5 py-1.5 text-muted-foreground">{policy.category}</TableCell>
+                <TableCell className="px-2.5 py-1.5 text-muted-foreground">{categoryLabel(policy.category, t)}</TableCell>
                 <TableCell className="px-2.5 py-1.5 whitespace-nowrap">
                   {formatVersion(policy.version)}
                 </TableCell>
                 <TableCell className="px-2.5 py-1.5 whitespace-nowrap">
-                  {DEPARTMENT_LABEL[policy.department]}
+                  {labels[policy.department]}
                 </TableCell>
                 <TableCell className="px-2.5 py-1.5 whitespace-nowrap">
                   <KindBadge type={policy.type} />
@@ -126,12 +130,12 @@ export function PolicyTable({
                 <TableCell className="px-2.5 py-1.5 whitespace-nowrap">
                   <StatusBadge status={policy.status} />
                   {policy.needsReview && (
-                    <p className="mt-0.5 text-[11px] text-amber-700">Perlu ditinjau</p>
+                    <p className="mt-0.5 text-[11px] text-amber-700">{t.table.needsReview}</p>
                   )}
                 </TableCell>
                 <TableCell className="px-2.5 py-1.5">{policy.author.name}</TableCell>
                 <TableCell className="px-2.5 py-1.5 text-xs whitespace-nowrap text-muted-foreground">
-                  {formatDateTime(policy.updatedAt)}
+                  {formatDateTime(policy.updatedAt, locale)}
                 </TableCell>
                 <TableCell className="px-2.5 py-1.5 whitespace-nowrap">
                   <PolicyRowActions

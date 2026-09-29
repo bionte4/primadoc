@@ -50,6 +50,59 @@ Nomor dokumen baru diisi otomatis, berbentuk `DEPARTEMEN/JENIS/URUTAN/TAHUN`. Co
 
 Prosedur dan petunjuk teknis mengikuti departemen induknya. Kategori juga ikut induk dan tidak diubah sendiri.
 
+## Alur proses
+
+Bangun dari atas ke bawah. Turunan baru hanya bisa dibuat dari induk yang sudah disetujui, lalu turunan itu menjalani siklusnya sendiri.
+
+```mermaid
+flowchart TD
+  kebijakan[Staf membuat kebijakan]
+  drafKebijakan[Draf kebijakan]
+  setujuKebijakan[Kebijakan disetujui]
+  prosedur[Staf membuat prosedur]
+  drafProsedur[Draf prosedur]
+  setujuProsedur[Prosedur disetujui]
+  juknis[Staf membuat petunjuk teknis]
+  drafJuknis[Draf petunjuk teknis]
+  setujuJuknis[Petunjuk teknis disetujui]
+
+  kebijakan --> drafKebijakan --> setujuKebijakan
+  setujuKebijakan --> prosedur --> drafProsedur --> setujuProsedur
+  setujuProsedur --> juknis --> drafJuknis --> setujuJuknis
+```
+
+Setiap kotak draf melewati review yang sama. Mengubah prosedur tidak menaikkan versi kebijakan. Mengubah petunjuk teknis tidak menaikkan versi prosedur.
+
+```mermaid
+flowchart TD
+  draf[Draf]
+  review[Dalam review]
+  catatan[Reviewer menulis catatan, opsional]
+  putusan{Keputusan approver yang ditunjuk}
+  disetujui[Disetujui]
+  baca[Staf membaca dan menandai sudah membaca]
+  revisi[Revisi menjadi draf versi baru]
+  arsip[Diarsipkan]
+  tinjau[Turunan ditandai perlu ditinjau]
+  cadangan{Ada approver cadangan?}
+  pengingat[Pengingat ke approver utama]
+  limpah[Keputusan dilimpahkan ke cadangan]
+
+  draf -->|Penulis mengajukan| review
+  review -->|Approver memutuskan| putusan
+  review -.-> catatan
+  review -->|Lewat 3 hari tanpa keputusan| cadangan
+  cadangan -->|Tidak| pengingat --> putusan
+  cadangan -->|Ya| limpah --> putusan
+  putusan -->|Approve| disetujui
+  putusan -->|Reject, catatan wajib| draf
+  disetujui --> baca
+  disetujui -->|Penulis atau admin merevisi| revisi --> draf
+  disetujui -->|Penulis atau admin mengarsipkan| arsip --> tinjau
+```
+
+Garis putus-putus adalah catatan reviewer. Catatan itu tidak menahan keputusan. Yang tercatat di audit log: pengajuan, catatan review, persetujuan, penolakan, pengingat, limpahan, revisi, dan arsip.
+
 ## Siklus status
 
 1. **Draf.** Penulis masih bisa mengubah isi dan berkas.
@@ -64,7 +117,7 @@ Tiap perpindahan status tercatat di riwayat persetujuan dan audit log.
 
 Hanya staf dan admin yang membuat dokumen.
 
-1. Buka **Dokumen**, lalu **Buat Kebijakan Baru**.
+1. Buka **Dokumen**, lalu **Buat Dokumen Baru**.
 2. Pilih tier.
    - Kebijakan: pilih departemen.
    - Prosedur atau petunjuk teknis: pilih **Dokumen induk**. Induk harus versi terbaru dan sudah disetujui. Departemen mengikuti induk.
@@ -101,15 +154,24 @@ Mengarsipkan induk tidak menghapus turunan. Buka turunan yang bertanda perlu dit
 
 Hapus hanya untuk draf atau dokumen yang ditolak, dan hanya oleh penulis atau admin. Dokumen yang masih punya turunan tidak bisa dihapus sebelum turunannya dipindahkan atau dihapus.
 
-## Mencari dokumen
+## Menu dan pencarian
 
-Di **Dokumen**, saring menurut status, tier, dan departemen. Chip status di atas tabel menghitung dokumen yang sedang terlihat.
+Bilah kiri:
 
-Dashboard adalah ringkasan, bukan daftar lengkap. Saring departemen dan tier di sana untuk melihat angka dan dokumen terbaru pada kelompok itu. Daftar penuh tetap di menu **Dokumen**.
+- **Beranda** merangkum status, tindakan cepat, pemakaian penyimpanan, dan aktivitas terbaru.
+- **Dokumen saya** menampilkan dokumen yang Anda tulis.
+- **Kebijakan**, **Prosedur**, dan **Petunjuk teknis** membuka daftar menurut tier.
+- **Menunggu persetujuan** dan **Review saya** tampil untuk reviewer, approver, dan admin.
+- **Pengaturan** menampilkan profil. Admin juga membuka pengguna, peran, organisasi, dan integrasi dari sana.
+
+Kotak cari di atas mencari judul atau nomor. **Pencarian AI** membuka pertanyaan bebas atas dokumen yang sudah disetujui, lalu menjawab dengan judul sumbernya. Di beranda, saringan departemen dan tier mengubah angka status. Panel kanan menampilkan review yang menunggu dan dokumen yang akan berakhir dalam 30 hari. Admin juga melihat **Pengguna** dan **Audit log**.
 
 ## Tugas admin
 
-- **Pengguna:** undang karyawan sebelum mereka bisa masuk. Peran dipilih saat undangan.
+- **Pengguna:** undang karyawan sebelum mereka bisa masuk, ubah peran, atau nonaktifkan akun. Peran dipilih saat undangan dan bisa diubah kemudian.
+- **Peran** menjelaskan hak ADMIN, APPROVER, REVIEWER, dan STAFF.
+- **Organisasi:** ubah nama tampilan CORP, HR, IT, FIN, dan OPS. Kodenya tetap karena dipakai nomor dokumen.
+- **Integrasi:** isi SMTP dan OpenAI, lalu gunakan **Uji koneksi**. Kunci yang disimpan di halaman ini menggantikan variabel server.
 - **Cadangan:** isi hanya pada baris approver.
 - **Audit log:** saring menurut tanggal dan nama, lalu ekspor CSV bila perlu untuk pemeriksaan.
 

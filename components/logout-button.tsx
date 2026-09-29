@@ -3,8 +3,10 @@
 import { LogOut } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/components/i18n-provider";
 
 export function LogoutButton() {
+  const { t } = useI18n();
   return (
     <Button
       variant="ghost"
@@ -13,7 +15,7 @@ export function LogoutButton() {
       onClick={() => signOut({ callbackUrl: "/login" })}
     >
       <LogOut />
-      Keluar
+      {t.nav.logout}
     </Button>
   );
 }

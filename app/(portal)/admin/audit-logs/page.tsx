@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AUDIT_LABEL } from "@/lib/constants";
+import { auditLabel, fill, getDictionary } from "@/lib/i18n";
 import { auditLogWhere } from "@/lib/audit-query";
 import { prisma } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
@@ -25,6 +25,7 @@ export default async function AuditLogsPage({
 }) {
   const user = await requireUser();
   if (!canManageUsers(user.role)) redirect("/dashboard");
+  const { locale, t } = await getDictionary();
 
   const params = await searchParams;
   const from = params.from ?? "";
@@ -52,14 +53,14 @@ export default async function AuditLogsPage({
     <div className="flex w-full flex-col gap-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Audit log</h1>
+          <h1 className="text-lg font-semibold tracking-tight">{t.auditPage.title}</h1>
           <p className="text-xs text-muted-foreground">
-            Riwayat aktivitas pada kebijakan. Menampilkan {logs.length} entri terbaru yang cocok.
+            {fill(t.auditPage.lead, { count: logs.length })}
           </p>
         </div>
         <Button nativeButton={false} size="sm" variant="outline" render={<a href={exportHref} />}>
           <Download />
-          Ekspor
+          {t.auditPage.export}
         </Button>
       </div>
 
@@ -69,32 +70,32 @@ export default async function AuditLogsPage({
         <Table className="min-w-[760px]">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>Waktu</TableHead>
-              <TableHead>Pengguna</TableHead>
-              <TableHead>Aksi</TableHead>
-              <TableHead>Kebijakan</TableHead>
-              <TableHead>Detail</TableHead>
+              <TableHead>{t.auditPage.time}</TableHead>
+              <TableHead>{t.auditPage.user}</TableHead>
+              <TableHead>{t.auditPage.action}</TableHead>
+              <TableHead>{t.auditPage.policy}</TableHead>
+              <TableHead>{t.auditPage.detail}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {logs.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="h-16 text-center text-sm text-muted-foreground">
-                  Tidak ada log yang cocok dengan filter ini.
+                  {t.auditPage.empty}
                 </TableCell>
               </TableRow>
             ) : (
               logs.map((log) => (
                 <TableRow key={log.id}>
                   <TableCell className="px-2.5 py-1.5 text-xs whitespace-nowrap text-muted-foreground">
-                    {formatDateTime(log.timestamp)}
+                    {formatDateTime(log.timestamp, locale)}
                   </TableCell>
                   <TableCell className="px-2.5 py-1.5 whitespace-normal">
                     {log.user.name}
                     <span className="block text-[11px] text-muted-foreground">{log.user.email}</span>
                   </TableCell>
                   <TableCell className="px-2.5 py-1.5 whitespace-nowrap">
-                    {AUDIT_LABEL[log.action] ?? log.action}
+                    {auditLabel(log.action, t)}
                   </TableCell>
                   <TableCell className="px-2.5 py-1.5 whitespace-normal">
                     {log.policy ? (

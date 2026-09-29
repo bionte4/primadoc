@@ -100,12 +100,14 @@ export function workplaceAccountLabel(account: {
   return "Belum masuk";
 }
 
-export function workplaceLoginError(code: string | undefined) {
+import type { Dictionary } from "@/lib/i18n/dictionary";
+
+export function workplaceLoginError(code: string | undefined, t?: Dictionary) {
   if (code === "AccessDenied") {
-    return "Akun kantor ini belum diundang. Minta admin menambahkan email Anda di PrismaDoc.";
+    return t?.login.accessDenied ?? "Akun kantor ini belum diundang. Minta admin menambahkan email Anda di PrismaDoc.";
   }
   if (code === "WorkspaceDomain") {
-    return "Gunakan akun Google Workspace perusahaan, bukan akun Gmail pribadi.";
+    return t?.login.workspaceDomain ?? "Gunakan akun Google Workspace perusahaan, bukan akun Gmail pribadi.";
   }
   if (
     code === "OAuthSignin" ||
@@ -114,7 +116,7 @@ export function workplaceLoginError(code: string | undefined) {
     code === "OAuthAccountNotLinked" ||
     code === "Configuration"
   ) {
-    return "Masuk dengan akun kantor belum berhasil. Periksa pendaftaran aplikasi OpenID Connect.";
+    return t?.login.oauthFailed ?? "Masuk dengan akun kantor belum berhasil. Periksa pendaftaran aplikasi OpenID Connect.";
   }
   return null;
 }

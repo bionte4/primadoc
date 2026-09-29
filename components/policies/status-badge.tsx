@@ -1,6 +1,8 @@
+"use client";
+
 import type { PolicyStatus } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
-import { STATUS_LABEL } from "@/lib/constants";
+import { useI18n } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 
 const STATUS_CLASS: Record<PolicyStatus, string> = {
@@ -12,9 +14,10 @@ const STATUS_CLASS: Record<PolicyStatus, string> = {
 };
 
 export function StatusBadge({ status }: { status: PolicyStatus }) {
+  const { t } = useI18n();
   return (
     <Badge variant="outline" className={cn("h-5 border px-1.5 text-[11px]", STATUS_CLASS[status])}>
-      {STATUS_LABEL[status]}
+      {t.status[status]}
     </Badge>
   );
 }

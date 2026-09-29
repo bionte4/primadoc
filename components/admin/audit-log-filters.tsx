@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/components/i18n-provider";
 
 export function AuditLogFilters({
   from,
@@ -18,6 +19,7 @@ export function AuditLogFilters({
   const [name, setName] = useState(user);
   const [start, setStart] = useState(from);
   const [end, setEnd] = useState(to);
+  const { t } = useI18n();
 
   function push(next: { from: string; to: string; user: string }) {
     const params = new URLSearchParams();
@@ -37,7 +39,7 @@ export function AuditLogFilters({
       }}
     >
       <label className="space-y-1 text-xs text-muted-foreground">
-        Dari tanggal
+        {t.auditPage.from}
         <Input
           type="date"
           value={start}
@@ -46,7 +48,7 @@ export function AuditLogFilters({
         />
       </label>
       <label className="space-y-1 text-xs text-muted-foreground">
-        Sampai tanggal
+        {t.auditPage.to}
         <Input
           type="date"
           value={end}
@@ -55,17 +57,17 @@ export function AuditLogFilters({
         />
       </label>
       <label className="min-w-0 flex-1 space-y-1 text-xs text-muted-foreground">
-        Nama pengguna
+        {t.auditPage.userName}
         <Input
           value={name}
           onChange={(event) => setName(event.target.value)}
-          placeholder="Cari nama"
+          placeholder={t.auditPage.userPlaceholder}
           className="h-8 text-[13px]"
-          aria-label="Nama pengguna"
+          aria-label={t.auditPage.userName}
         />
       </label>
       <Button type="submit" size="sm" variant="secondary">
-        Tampilkan
+        {t.auditPage.show}
       </Button>
     </form>
   );

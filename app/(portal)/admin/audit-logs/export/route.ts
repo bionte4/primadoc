@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { auditLogWhere } from "@/lib/audit-query";
-import { AUDIT_LABEL } from "@/lib/constants";
+import { auditLabel, getDictionary } from "@/lib/i18n";
 import { prisma } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { canManageUsers } from "@/lib/rbac";
@@ -27,12 +27,21 @@ export async function GET(request: Request) {
     orderBy: { timestamp: "desc" },
   });
 
-  const header = ["Waktu", "Pengguna", "Email", "Aksi", "Nomor dokumen", "Judul", "Detail"];
+  const { locale, t } = await getDictionary();
+  const header = [
+    t.auditPage.time,
+    t.auditPage.user,
+    t.settings.email,
+    t.auditPage.action,
+    t.table.number,
+    t.table.title,
+    t.auditPage.detail,
+  ];
   const rows = logs.map((log) => [
-    formatDateTime(log.timestamp),
+    formatDateTime(log.timestamp, locale),
     log.user.name,
     log.user.email,
-    AUDIT_LABEL[log.action] ?? log.action,
+    auditLabel(log.action, t),
     log.policy?.documentNumber ?? "",
     log.policy?.title ?? "",
     log.details ?? "",

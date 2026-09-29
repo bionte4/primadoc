@@ -1,10 +1,28 @@
 "use client";
 
-import { Bell, ClipboardCheck, FileText, LayoutDashboard, ScrollText, Users, type LucideIcon } from "lucide-react";
+import {
+  Bell,
+  BookOpen,
+  ClipboardCheck,
+  FileText,
+  FolderOpen,
+  LayoutDashboard,
+  ListTree,
+  MessageSquareText,
+  ScrollText,
+  Settings,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { LogoutButton } from "@/components/logout-button";
-import { ROLE_LABEL } from "@/lib/constants";
+import { LanguageSwitch } from "@/components/language-switch";
+import { DocumentSearch } from "@/components/shell/document-search";
+import { Badge } from "@/components/ui/badge";
+import { useI18n } from "@/components/i18n-provider";
+import { fill } from "@/lib/i18n/labels";
 import { canAccessApprovalQueue, canManageUsers, type SessionUser } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +49,7 @@ function NavItem({
   return (
     <Link
       href={href}
+      aria-current={active ? "page" : undefined}
       className={cn(
         "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
         active
@@ -54,6 +73,73 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ShellNav({ user }: { user: SessionUser }) {
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const { t } = useI18n();
+  const type = params.get("type");
+  const scope = params.get("scope");
+  const onPolicies = pathname.startsWith("/policies");
+  const onApproval = pathname.startsWith("/approval");
+  const showQueue = canAccessApprovalQueue(user.role);
+  const showAdmin = canManageUsers(user.role);
+
+  return (
+    <>
+      <SectionLabel>{t.nav.work}</SectionLabel>
+      <NavItem href="/dashboard" active={pathname === "/dashboard"} icon={LayoutDashboard}>
+        {t.nav.home}
+      </NavItem>
+      <NavItem href="/policies?scope=mine" active={onPolicies && scope === "mine"} icon={FolderOpen}>
+        {t.nav.mine}
+      </NavItem>
+      <NavItem href="/policies?type=POLICY" active={onPolicies && type === "POLICY" && scope !== "mine"} icon={FileText}>
+        {t.nav.policy}
+      </NavItem>
+      <NavItem
+        href="/policies?type=PROCEDURE"
+        active={onPolicies && type === "PROCEDURE" && scope !== "mine"}
+        icon={ListTree}
+      >
+        {t.nav.procedure}
+      </NavItem>
+      <NavItem
+        href="/policies?type=TECHNICAL_GUIDE"
+        active={onPolicies && type === "TECHNICAL_GUIDE" && scope !== "mine"}
+        icon={BookOpen}
+      >
+        {t.nav.guide}
+      </NavItem>
+      {showQueue && (
+        <>
+          <SectionLabel>{t.nav.review}</SectionLabel>
+          <NavItem href="/approval" active={onApproval && params.get("mine") !== "1"} icon={ClipboardCheck}>
+            {t.nav.awaiting}
+          </NavItem>
+          <NavItem href="/approval?mine=1" active={onApproval && params.get("mine") === "1"} icon={MessageSquareText}>
+            {t.nav.myReviews}
+          </NavItem>
+        </>
+      )}
+      <SectionLabel>{t.nav.account}</SectionLabel>
+      <NavItem href="/settings" active={pathname === "/settings"} icon={Settings}>
+        {t.nav.settings}
+      </NavItem>
+      {showAdmin && (
+        <>
+          <SectionLabel>{t.nav.admin}</SectionLabel>
+          <NavItem href="/settings/users" active={pathname.startsWith("/settings/users") || pathname.startsWith("/users")} icon={Users}>
+            {t.nav.users}
+          </NavItem>
+          <NavItem href="/admin/audit-logs" active={pathname.startsWith("/admin/audit-logs")} icon={ScrollText}>
+            {t.nav.audit}
+          </NavItem>
+        </>
+      )}
+    </>
+  );
+}
+
 export function AppShell({
   user,
   unreadReminders = 0,
@@ -64,84 +150,74 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const dashboardActive = pathname === "/dashboard";
-  const policiesActive = pathname.startsWith("/policies");
-  const approvalActive = pathname.startsWith("/approval");
-  const usersActive = pathname.startsWith("/users");
-  const auditActive = pathname.startsWith("/admin/audit-logs");
-  const showAdmin = canManageUsers(user.role);
+  const { t } = useI18n();
+  const displayName = user.name?.trim() || t.common.userFallback;
+  const roleName = t.role[user.role];
 
   return (
     <div className="flex min-h-screen flex-col bg-background md:flex-row">
-      <aside className="flex shrink-0 flex-col border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:min-h-screen md:w-60 md:border-r md:border-b-0">
+      <aside className="flex w-full min-w-0 shrink-0 flex-col border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:min-h-screen md:w-60 md:border-r md:border-b-0">
         <div className="flex items-center gap-2.5 px-3.5 py-3.5">
           <span className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
             <FileText className="size-4" />
           </span>
           <div className="min-w-0">
             <p className="text-sm leading-none font-semibold tracking-tight">PrismaDoc</p>
-            <p className="mt-1 truncate text-[11px] text-sidebar-foreground/55">Kebijakan perusahaan</p>
+            <p className="mt-1 truncate text-[11px] text-sidebar-foreground/55">{t.nav.product}</p>
           </div>
         </div>
-        <nav className="flex flex-wrap gap-1 px-2 pb-2 md:flex-1 md:flex-col md:flex-nowrap md:gap-0.5 md:px-2 md:pb-3">
-          <SectionLabel>Kerja</SectionLabel>
-          <NavItem href="/dashboard" active={dashboardActive} icon={LayoutDashboard}>
-            Dashboard
-          </NavItem>
-          <NavItem href="/policies" active={policiesActive} icon={FileText}>
-            Dokumen
-          </NavItem>
-          {canAccessApprovalQueue(user.role) && (
-            <NavItem href="/approval" active={approvalActive} icon={ClipboardCheck}>
-              Persetujuan
-            </NavItem>
-          )}
-          {showAdmin && (
-            <>
-              <SectionLabel>Administrasi</SectionLabel>
-              <NavItem href="/users" active={usersActive} icon={Users}>
-                Pengguna
-              </NavItem>
-              <NavItem href="/admin/audit-logs" active={auditActive} icon={ScrollText}>
-                Audit log
-              </NavItem>
-            </>
-          )}
+        <nav
+          aria-label={t.nav.main}
+          className="flex flex-wrap gap-1 px-2 pb-2 md:flex-1 md:flex-col md:flex-nowrap md:gap-0.5 md:px-2 md:pb-3"
+        >
+          <Suspense fallback={<p className="px-2.5 text-xs text-sidebar-foreground/50">{t.common.loadingMenu}</p>}>
+            <ShellNav user={user} />
+          </Suspense>
         </nav>
         <div className="mt-auto hidden items-center gap-2.5 border-t border-sidebar-border px-3 py-3 md:flex">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-[11px] font-medium text-sidebar-primary">
-            {initials(user.name || "?")}
+            {initials(displayName)}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-[13px] font-medium">{user.name}</p>
-            <p className="truncate text-[11px] text-sidebar-foreground/55">{ROLE_LABEL[user.role]}</p>
+            <p className="truncate text-[13px] font-medium">{displayName}</p>
+            <p className="truncate text-[11px] text-sidebar-foreground/55">{roleName}</p>
           </div>
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-11 items-center justify-between border-b bg-card px-4 md:px-5">
-          <p className="text-xs text-muted-foreground">Manajemen kebijakan</p>
-          <div className="flex items-center gap-2">
+        <header className="flex flex-col gap-2 border-b bg-card px-3 py-2 md:flex-row md:items-center md:gap-3 md:px-5">
+          <DocumentSearch />
+          <div className="flex items-center justify-end gap-1">
+            <LanguageSwitch />
             <Link
               href="/notifications"
-              className="relative inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs hover:bg-muted"
+              aria-label={unreadReminders > 0 ? fill(t.nav.remindersUnread, { count: unreadReminders }) : t.nav.reminders}
+              className="relative inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <Bell className="size-3.5" />
-              Pengingat
+              <span className="hidden sm:inline">{t.nav.reminders}</span>
               {unreadReminders > 0 && (
                 <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
                   {unreadReminders}
                 </span>
               )}
             </Link>
-            <span className="hidden text-xs sm:inline">
-              {user.name}
-              <span className="text-muted-foreground"> · {ROLE_LABEL[user.role]}</span>
-            </span>
+            <Link
+              href="/settings"
+              aria-label={fill(t.nav.profile, { name: displayName, role: roleName })}
+              aria-current={pathname.startsWith("/settings") ? "page" : undefined}
+              className="inline-flex h-8 items-center gap-2 rounded-lg px-1.5 outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <span className="flex size-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary dark:bg-primary/20">
+                {initials(displayName)}
+              </span>
+              <span className="hidden max-w-32 truncate text-xs font-medium lg:inline">{displayName}</span>
+              <Badge variant="secondary">{roleName}</Badge>
+            </Link>
             <LogoutButton />
           </div>
         </header>
-        <main className="flex-1 px-3 py-3 md:px-5 md:py-4">{children}</main>
+        <main className="w-full min-w-0 flex-1 px-3 py-3 md:px-5 md:py-4">{children}</main>
       </div>
     </div>
   );
