@@ -4,6 +4,8 @@ Dokumen ini untuk penempatan PrismaDoc di divisi kebijakan Eximbank. Wilayah clo
 
 Aplikasi hari ini menyimpan berkas di disk lokal (`uploads/`) dan menyalakan pengingat tinjauan di setiap proses. Topologi target memisahkan berkas ke bucket privat dan hanya mengizinkan satu penjadwal.
 
+Yang dipesan sebagai VPS hanya **2 mesin aplikasi**. Basis data, penyeimbang beban, dan bucket adalah layanan terkelola, bukan VPS tambahan. Dua mesin di dalam layanan basis data dijalankan oleh penyedia cloud.
+
 ## HLD
 
 Empat lapisan: akses pegawai, aplikasi, basis data, dan berkas. Basis data dan berkas tidak punya alamat publik.
@@ -135,7 +137,7 @@ Akun percobaan dan sandi `Password123!` tidak dipakai. Sandi lokal hanya untuk a
 | Mesin | PostgreSQL 16 |
 | Ukuran | 2 vCPU, 4–8 GB RAM |
 | Disk | 100 GB, dapat tumbuh sampai 200 GB |
-| Penempatan | Dua zona, satu primer dan satu siaga |
+| Penempatan | Layanan terkelola, dua zona, satu primer dan satu siaga. Bukan dua VPS. |
 | Nama basis data | `prismadoc` |
 | Port | 5432, hanya dari subnet aplikasi |
 | Enkripsi | Kunci yang dikelola di wilayah Jakarta |
@@ -165,12 +167,14 @@ Kondisi kode sekarang: `lib/upload.ts` menulis ke folder `uploads/` di disk pros
 
 Cadangan harian menyalin bucket dan membuang salinan basis data ke lokasi cadangan di wilayah yang sama. Uji pulih sekali sebelum serah terima: pulihkan basis data, pastikan satu dokumen lama masih bisa dibuka.
 
-### Ringkasan ukuran
+### Ringkasan pesanan
 
-| Lapisan | Jumlah | Ukuran |
-| --- | --- | --- |
-| Penyeimbang beban | 1 | HTTPS 443 menuju port 3000 |
-| Server aplikasi | 2 | 2 vCPU, 4 GB RAM, disk sistem 30 GB |
-| Basis data | 1 primer + 1 siaga | 2 vCPU, 4–8 GB RAM, 100 GB |
-| Berkas | 1 bucket privat | 200 GB |
-| Penjadwal | 1 | 08:00 WIB, hanya di app-1 |
+VPS yang disediakan tim infrastruktur: **2**. Sehari-hari hanya `app-1` yang prosesnya hidup. `app-2` tetap disewa dan dinyalakan bila `app-1` gagal.
+
+| Yang dipesan | Bentuk | Jumlah | Ukuran |
+| --- | --- | --- | --- |
+| Aplikasi | VPS | 2 | 2 vCPU, 4 GB RAM, disk sistem 30 GB |
+| Penyeimbang beban | Layanan | 1 | HTTPS 443 menuju port 3000 |
+| Basis data | PostgreSQL terkelola | 1 layanan | 2 vCPU, 4–8 GB RAM, 100 GB, primer dan siaga di dalam layanan |
+| Berkas | Bucket privat | 1 | 200 GB |
+| Penjadwal | Bagian dari app-1 | 1 | 08:00 WIB |
