@@ -8,6 +8,7 @@ import {
   FolderOpen,
   LayoutDashboard,
   ListTree,
+  Menu,
   MessageSquareText,
   ScrollText,
   Settings,
@@ -16,7 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { LogoutButton } from "@/components/logout-button";
 import { LanguageSwitch } from "@/components/language-switch";
 import { DocumentSearch } from "@/components/shell/document-search";
@@ -53,7 +54,7 @@ function NavItem({
       className={cn(
         "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
         active
-          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground md:shadow-[inset_2px_0_0_0_var(--sidebar-primary)]"
+          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground lg:shadow-[inset_2px_0_0_0_var(--sidebar-primary)]"
           : "text-sidebar-foreground/75 hover:bg-sidebar-accent/55 hover:text-sidebar-foreground",
       )}
     >
@@ -67,7 +68,7 @@ function NavItem({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mt-4 hidden px-2.5 pb-1 text-[10px] font-medium tracking-[0.16em] text-sidebar-foreground/40 uppercase first:mt-1 md:block">
+    <p className="mt-4 px-2.5 pb-1 text-[10px] font-medium tracking-[0.16em] text-sidebar-foreground/40 uppercase first:mt-1">
       {children}
     </p>
   );
@@ -153,10 +154,15 @@ export function AppShell({
   const { t } = useI18n();
   const displayName = user.name?.trim() || t.common.userFallback;
   const roleName = t.role[user.role];
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
 
   return (
-    <div className="flex min-h-screen flex-col bg-background md:flex-row">
-      <aside className="flex w-full min-w-0 shrink-0 flex-col border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:min-h-screen md:w-60 md:border-r md:border-b-0">
+    <div className="flex min-h-screen flex-col bg-background lg:flex-row">
+      <aside className="hidden w-60 shrink-0 flex-col border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex lg:min-h-screen lg:border-r">
         <div className="flex items-center gap-2.5 px-3.5 py-3.5">
           <span className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
             <FileText className="size-4" />
@@ -168,13 +174,13 @@ export function AppShell({
         </div>
         <nav
           aria-label={t.nav.main}
-          className="flex flex-wrap gap-1 px-2 pb-2 md:flex-1 md:flex-col md:flex-nowrap md:gap-0.5 md:px-2 md:pb-3"
+          className="flex flex-1 flex-col gap-0.5 px-2 pb-3"
         >
           <Suspense fallback={<p className="px-2.5 text-xs text-sidebar-foreground/50">{t.common.loadingMenu}</p>}>
             <ShellNav user={user} />
           </Suspense>
         </nav>
-        <div className="mt-auto hidden items-center gap-2.5 border-t border-sidebar-border px-3 py-3 md:flex">
+        <div className="mt-auto flex items-center gap-2.5 border-t border-sidebar-border px-3 py-3">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-[11px] font-medium text-sidebar-primary">
             {initials(displayName)}
           </span>
@@ -185,7 +191,15 @@ export function AppShell({
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-col gap-2 border-b bg-card px-3 py-2 md:flex-row md:items-center md:gap-3 md:px-5">
+        <header className="flex flex-col gap-2 border-b bg-card px-3 py-2 sm:flex-row sm:items-center sm:gap-3 sm:px-5">
+          <button
+            type="button"
+            className="touch-target hidden h-8 items-center gap-1.5 rounded-md px-2 text-xs outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 sm:inline-flex lg:hidden"
+            onClick={() => setMenuOpen(true)}
+          >
+            <Menu className="size-4" />
+            {t.nav.openMenu}
+          </button>
           <DocumentSearch />
           <div className="flex items-center justify-end gap-1">
             <LanguageSwitch />
@@ -217,8 +231,86 @@ export function AppShell({
             <LogoutButton />
           </div>
         </header>
-        <main className="w-full min-w-0 flex-1 px-3 py-3 md:px-5 md:py-4">{children}</main>
+        <main className="w-full min-w-0 flex-1 px-3 pt-3 pb-20 sm:px-5 sm:py-4">{children}</main>
       </div>
+      <PhoneBar user={user} onMore={() => setMenuOpen(true)} />
+      {menuOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button type="button" className="absolute inset-0 bg-black/40" aria-label={t.nav.closeMenu} onClick={() => setMenuOpen(false)} />
+          <div className="absolute inset-x-0 bottom-16 max-h-[70dvh] overflow-auto bg-sidebar text-sidebar-foreground shadow-lg sm:inset-y-0 sm:bottom-0 sm:left-0 sm:w-72 sm:max-h-none sm:border-r sm:border-sidebar-border">
+            <nav aria-label={t.nav.main} className="flex flex-col gap-0.5 p-3" onClick={() => setMenuOpen(false)}>
+              <Suspense fallback={<p className="px-2.5 text-xs text-sidebar-foreground/50">{t.common.loadingMenu}</p>}>
+                <ShellNav user={user} />
+              </Suspense>
+            </nav>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function PhoneBar({ user, onMore }: { user: SessionUser; onMore: () => void }) {
+  const pathname = usePathname();
+  const { t } = useI18n();
+  const showQueue = canAccessApprovalQueue(user.role);
+  const onPolicies = pathname.startsWith("/policies");
+  const onApproval = pathname.startsWith("/approval");
+
+  return (
+    <nav
+      aria-label={t.nav.main}
+      className="fixed inset-x-0 bottom-0 z-30 flex border-t bg-card pb-[env(safe-area-inset-bottom)] sm:hidden"
+    >
+      <PhoneLink href="/dashboard" active={pathname === "/dashboard"} icon={LayoutDashboard}>
+        {t.nav.home}
+      </PhoneLink>
+      <PhoneLink href="/policies" active={onPolicies} icon={FileText}>
+        {t.nav.documents}
+      </PhoneLink>
+      {showQueue ? (
+        <PhoneLink href="/approval" active={onApproval} icon={ClipboardCheck}>
+          {t.nav.review}
+        </PhoneLink>
+      ) : (
+        <PhoneLink href="/settings" active={pathname.startsWith("/settings")} icon={Settings}>
+          {t.nav.settings}
+        </PhoneLink>
+      )}
+      <button
+        type="button"
+        onClick={onMore}
+        className="touch-target flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-[11px] text-muted-foreground"
+      >
+        <Menu className="size-4" />
+        {t.nav.more}
+      </button>
+    </nav>
+  );
+}
+
+function PhoneLink({
+  href,
+  active,
+  icon: Icon,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  icon: LucideIcon;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "touch-target flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-[11px]",
+        active ? "font-medium text-primary" : "text-muted-foreground",
+      )}
+    >
+      <Icon className="size-4" />
+      {children}
+    </Link>
   );
 }

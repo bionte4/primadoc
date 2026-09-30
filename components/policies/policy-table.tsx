@@ -48,14 +48,46 @@ export async function PolicyTable({
   const labels = localizeDepartments(storedLabels, t);
 
   return (
-    <div className="overflow-hidden rounded-lg bg-card ring-1 ring-foreground/10">
+    <>
+    <div className="flex flex-col gap-2 sm:hidden">
+      {policies.length === 0 ? (
+        <p className="rounded-lg bg-card px-3 py-6 text-center text-sm text-muted-foreground ring-1 ring-foreground/10">
+          {emptyLabel}
+        </p>
+      ) : (
+        policies.map((policy) => (
+          <article key={policy.id} className="rounded-lg bg-card p-3 ring-1 ring-foreground/10">
+            <Link href={`/policies/${policy.id}`} className="font-mono text-xs font-medium hover:underline">
+              {policy.documentNumber}
+            </Link>
+            <Link href={`/policies/${policy.id}`} className="mt-1 block text-sm leading-5 font-medium hover:underline">
+              {policy.title}
+            </Link>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusBadge status={policy.status} />
+              <KindBadge type={policy.type} />
+              {policy.needsReview && <span className="text-[11px] text-amber-700">{t.table.needsReview}</span>}
+            </div>
+            <div className="mt-2">
+              <PolicyRowActions
+                policyId={policy.id}
+                canSubmit={canSubmitForReview(user.role, policy.status, policy.authorId === user.id)}
+                canDecide={canDecide(user.role, policy.status, user.id, policy)}
+                canDelete={canDeletePolicy(user.role, policy.status, policy.authorId === user.id)}
+              />
+            </div>
+          </article>
+        ))
+      )}
+    </div>
+    <div className="hidden overflow-hidden rounded-lg bg-card ring-1 ring-foreground/10 sm:block">
       <Table className="min-w-[760px]">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
               {t.table.number}
             </TableHead>
-            <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+            <TableHead className="sticky left-0 z-10 h-8 bg-card px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
               {t.table.title}
             </TableHead>
             <TableHead className="h-8 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -99,7 +131,7 @@ export async function PolicyTable({
                     {policy.documentNumber}
                   </Link>
                 </TableCell>
-                <TableCell className="max-w-80 px-2.5 py-1.5 whitespace-normal">
+                <TableCell className="sticky left-0 z-10 max-w-80 bg-card px-2.5 py-1.5 whitespace-normal">
                   <Link href={`/policies/${policy.id}`} className="line-clamp-2 leading-5 hover:underline">
                     {policy.title}
                   </Link>
@@ -159,5 +191,6 @@ export async function PolicyTable({
         </TableBody>
       </Table>
     </div>
+    </>
   );
 }

@@ -60,7 +60,7 @@ export function PolicyActions({
   return (
     <div className="flex flex-col gap-1.5">
       {canEdit && (
-        <Button nativeButton={false} render={<Link href={`/policies/${policyId}/edit`} />}>
+        <Button nativeButton={false} className="touch-target" render={<Link href={`/policies/${policyId}/edit`} />}>
           {t.actions.editDraft}
         </Button>
       )}
@@ -130,6 +130,7 @@ export function PolicyRowActions({
       <Button
         size="xs"
         variant="outline"
+        className="touch-target"
         nativeButton={false}
         render={<Link href={`/policies/${policyId}`} />}
       >
@@ -197,7 +198,7 @@ function NoteDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        render={<Button size={size} variant={destructive ? "destructive" : "outline"} />}
+        render={<Button size={size} variant={destructive ? "destructive" : "outline"} className="touch-target" />}
       >
         {title}
       </DialogTrigger>
@@ -215,7 +216,7 @@ function NoteDialog({
           />
           {state.error && <p className="text-sm text-destructive">{state.error}</p>}
           <DialogFooter>
-            <Button type="submit" variant={destructive ? "destructive" : "default"} disabled={pending}>
+            <Button type="submit" variant={destructive ? "destructive" : "default"} className="touch-target" disabled={pending}>
               {pending ? t.common.processing : confirmLabel}
             </Button>
           </DialogFooter>
@@ -241,7 +242,7 @@ function DeleteButton({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size={size} variant="destructive" />}>{t.actions.delete}</DialogTrigger>
+      <DialogTrigger render={<Button size={size} variant="destructive" className="touch-target" />}>{t.actions.delete}</DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t.actions.deleteTitle}</DialogTitle>
@@ -252,7 +253,7 @@ function DeleteButton({
         <form action={formAction} className="space-y-3">
           {state.error && <p className="text-sm text-destructive">{state.error}</p>}
           <DialogFooter>
-            <Button type="submit" variant="destructive" disabled={pending}>
+            <Button type="submit" variant="destructive" className="touch-target" disabled={pending}>
               {pending ? t.actions.deleting : t.actions.delete}
             </Button>
           </DialogFooter>
@@ -272,7 +273,7 @@ function ReviseButton({ policyId }: { policyId: string }) {
   return (
     <form action={formAction}>
       {state.error && <p className="mb-2 text-sm text-destructive">{state.error}</p>}
-      <Button type="submit" variant="outline" disabled={pending}>
+      <Button type="submit" variant="outline" className="touch-target" disabled={pending}>
         {pending ? t.actions.revising : t.actions.revise}
       </Button>
     </form>

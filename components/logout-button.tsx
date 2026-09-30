@@ -11,11 +11,12 @@ export function LogoutButton() {
     <Button
       variant="ghost"
       size="sm"
-      className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground md:text-foreground md:hover:bg-muted md:hover:text-foreground"
+      className="touch-target text-foreground"
+      aria-label={t.nav.logout}
       onClick={() => signOut({ callbackUrl: "/login" })}
     >
       <LogOut />
-      {t.nav.logout}
+      <span className="hidden sm:inline">{t.nav.logout}</span>
     </Button>
   );
 }

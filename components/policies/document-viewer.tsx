@@ -33,7 +33,7 @@ export async function DocumentViewer({
         </div>
         <a
           href={downloadHref}
-          className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+          className="touch-target inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
         >
           <Download className="size-3.5" />
           {t.detail.download}
@@ -45,7 +45,7 @@ export async function DocumentViewer({
           <iframe
             title={fileName ?? t.detail.pdfTitle}
             src={`${inlineHref}#toolbar=1`}
-            className="h-[72vh] min-h-112 w-full rounded-md border bg-white"
+            className="h-[70dvh] w-full rounded-md border bg-white sm:h-[72vh] sm:min-h-112"
           />
         )}
         {view.kind === "image" && (
@@ -58,12 +58,12 @@ export async function DocumentViewer({
         )}
         {view.kind === "html" && (
           <div
-            className="h-[72vh] min-h-112 overflow-auto rounded-md border bg-white px-6 py-5 text-sm leading-6 text-slate-900 [&_a]:text-blue-700 [&_a]:underline [&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold [&_img]:my-3 [&_img]:max-w-full [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_table]:mb-3 [&_table]:w-full [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5"
+            className="h-[70dvh] overflow-auto rounded-md border bg-white px-3 py-4 text-sm leading-6 text-slate-900 sm:h-[72vh] sm:min-h-112 sm:px-6 sm:py-5 [&_a]:text-blue-700 [&_a]:underline [&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold [&_img]:my-3 [&_img]:max-w-full [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_table]:mb-3 [&_table]:w-full [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5"
             dangerouslySetInnerHTML={{ __html: view.html }}
           />
         )}
         {view.kind === "text" && (
-          <pre className="h-[72vh] min-h-112 overflow-auto rounded-md border bg-white px-6 py-5 font-sans text-sm leading-6 whitespace-pre-wrap text-slate-900">
+          <pre className="h-[70dvh] overflow-auto rounded-md border bg-white px-3 py-4 font-sans text-sm leading-6 whitespace-pre-wrap text-slate-900 sm:h-[72vh] sm:min-h-112 sm:px-6 sm:py-5">
             {view.text}
           </pre>
         )}

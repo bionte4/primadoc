@@ -66,11 +66,31 @@ export default async function AuditLogsPage({
 
       <AuditLogFilters from={from} to={to} user={name} />
 
-      <div className="overflow-hidden rounded-lg bg-card ring-1 ring-foreground/10">
+      <div className="flex flex-col gap-2 sm:hidden">
+        {logs.length === 0 ? (
+          <p className="rounded-lg bg-card px-3 py-6 text-center text-sm text-muted-foreground ring-1 ring-foreground/10">
+            {t.auditPage.empty}
+          </p>
+        ) : (
+          logs.map((log) => (
+            <article key={log.id} className="rounded-lg bg-card p-3 ring-1 ring-foreground/10">
+              <p className="text-sm font-medium">{auditLabel(log.action, t)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(log.timestamp, locale)}</p>
+              <p className="mt-1 text-sm">{log.user.name}</p>
+              {log.policy && (
+                <Link href={`/policies/${log.policy.id}`} className="mt-1 block font-mono text-xs hover:underline">
+                  {log.policy.documentNumber}
+                </Link>
+              )}
+            </article>
+          ))
+        )}
+      </div>
+      <div className="hidden overflow-hidden rounded-lg bg-card ring-1 ring-foreground/10 sm:block">
         <Table className="min-w-[760px]">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>{t.auditPage.time}</TableHead>
+              <TableHead className="sticky left-0 z-10 bg-card">{t.auditPage.time}</TableHead>
               <TableHead>{t.auditPage.user}</TableHead>
               <TableHead>{t.auditPage.action}</TableHead>
               <TableHead>{t.auditPage.policy}</TableHead>
@@ -87,7 +107,7 @@ export default async function AuditLogsPage({
             ) : (
               logs.map((log) => (
                 <TableRow key={log.id}>
-                  <TableCell className="px-2.5 py-1.5 text-xs whitespace-nowrap text-muted-foreground">
+                  <TableCell className="sticky left-0 z-10 bg-card px-2.5 py-1.5 text-xs whitespace-nowrap text-muted-foreground">
                     {formatDateTime(log.timestamp, locale)}
                   </TableCell>
                   <TableCell className="px-2.5 py-1.5 whitespace-normal">

@@ -128,3 +128,9 @@
     @apply font-sans;
   }
 }
+
+@media (pointer: coarse) {
+  .touch-target {
+    min-height: 2.75rem;
+  }
+}

@@ -45,6 +45,10 @@ export const id = {
     remindersUnread: "Pengingat, {count} belum dibaca",
     profile: "Profil {name}, peran {role}",
     logout: "Keluar",
+    documents: "Dokumen",
+    more: "Lainnya",
+    openMenu: "Menu",
+    closeMenu: "Tutup menu",
   },
   search: {
     placeholder: "Cari judul atau nomor dokumen",
@@ -651,6 +655,10 @@ export const en: Dictionary = {
     remindersUnread: "Reminders, {count} unread",
     profile: "Profile {name}, role {role}",
     logout: "Log out",
+    documents: "Documents",
+    more: "More",
+    openMenu: "Menu",
+    closeMenu: "Close menu",
   },
   search: {
     placeholder: "Search by title or document number",

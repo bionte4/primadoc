@@ -249,7 +249,7 @@ export function PolicyForm({
             ref={fileRef}
             type="file"
             accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg"
-            className="h-10 pt-1.5"
+            className="touch-target h-10 pt-1.5"
           />
           <p className="text-xs text-muted-foreground">
             {t.form.fileHint}
@@ -290,7 +290,7 @@ export function PolicyForm({
         )}
       </div>
       {state.error && <p className="text-sm text-destructive">{state.error}</p>}
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" className="touch-target" disabled={pending}>
         {pending ? t.common.saving : mode === "create" ? t.form.saveDraft : t.form.saveChanges}
       </Button>
     </form>
